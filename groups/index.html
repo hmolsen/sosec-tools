@@ -54,7 +54,6 @@
                         <textarea id="participantInput" rows="8"
                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm resize-y font-mono text-sm bg-[#E7E6E6]"
                             placeholder="Alice&#10;Bob&#10;Charlie&#10;Dave&#10;Eve&#10;Frank&#10;Grace&#10;Heidi"></textarea>
-                        <p id="liveStats" class="text-sm text-gray-500 mt-2 min-h-[1.25rem]"></p>
                     </div>
 
                     <div class="flex flex-col gap-3">
@@ -85,7 +84,7 @@
             <!-- Stats bar (contains present button) -->
             <div id="statsBar" class="hidden bg-white px-4 py-3 rounded-xl shadow border border-gray-200 flex items-center gap-4 flex-wrap">
                 <div id="statsText" class="text-sm text-gray-600 flex flex-wrap items-center gap-x-5 gap-y-1 flex-grow min-w-0"></div>
-                <div class="flex items-center gap-2 shrink-0">
+                <div id="presentButtons" class="flex items-center gap-2 shrink-0">
                     <button onclick="window.location.href='?view=present'"
                         class="inline-flex items-center gap-2 px-4 py-2 bg-[#7B1717] text-white text-sm font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -221,24 +220,49 @@
         const groupCountInput   = document.getElementById('groupCount');
         const statsBar          = document.getElementById('statsBar');
         const statsText         = document.getElementById('statsText');
-        const liveStats         = document.getElementById('liveStats');
+        const presentButtons    = document.getElementById('presentButtons');
         const unassignedSection = document.getElementById('unassignedSection');
         const unassignedPool    = document.getElementById('unassignedPool');
         const unassignedChips   = document.getElementById('unassignedChips');
         const groupsGrid        = document.getElementById('groupsGrid');
         const toastEl           = document.getElementById('toast');
 
-        // ── Live stats preview ─────────────────────────────────────────────────
-        function updateLiveStats() {
+        // ── Stats bar ──────────────────────────────────────────────────────────
+        function perGroupLabel(total, groups) {
+            const lo = Math.floor(total / groups);
+            const hi = Math.ceil(total / groups);
+            return lo === hi ? `${lo}` : `${lo}–${hi}`;
+        }
+
+        function refreshStatsBar() {
+            // Always derive count from whatever is currently in the textarea
             const names  = participantInput.value.split('\n').map(n => n.trim()).filter(Boolean);
             const unique = [...new Set(names)];
             const n      = unique.length;
             const g      = Math.max(1, parseInt(groupCountInput.value) || 3);
-            if (n === 0) { liveStats.textContent = ''; return; }
-            const lo = Math.floor(n / g);
-            const hi = Math.ceil(n / g);
-            const perGroup = lo === hi ? `${lo}` : `${lo}–${hi}`;
-            liveStats.textContent = `${n} participant${n !== 1 ? 's' : ''} · ${perGroup} per group`;
+
+            if (n === 0) { statsBar.classList.add('hidden'); return; }
+
+            let html =
+                `<span><strong class="text-black">${n}</strong> participant${n !== 1 ? 's' : ''}</span>` +
+                `<span class="text-gray-300">·</span>` +
+                `<span><strong class="text-black">${g}</strong> group${g !== 1 ? 's' : ''}</span>` +
+                `<span class="text-gray-300">·</span>` +
+                `<span><strong class="text-black">${perGroupLabel(n, g)}</strong> per group</span>`;
+
+            if (state.groups.length > 0) {
+                const nUnassigned = state.unassigned.length;
+                const uCls = nUnassigned > 0 ? 'text-[#7B1717]' : 'text-black';
+                html +=
+                    `<span class="text-gray-300">·</span>` +
+                    `<span><strong class="${uCls}">${nUnassigned}</strong> unassigned</span>`;
+                presentButtons.classList.remove('hidden');
+            } else {
+                presentButtons.classList.add('hidden');
+            }
+
+            statsText.innerHTML = html;
+            statsBar.classList.remove('hidden');
         }
 
         // ── Persistence ────────────────────────────────────────────────────────
@@ -289,25 +313,10 @@
             participantInput.value = state.participants.join('\n');
             groupCountInput.value  = state.numGroups;
 
-            const total       = state.participants.length;
+            refreshStatsBar();
+
             const nGroups     = state.groups.length;
             const nUnassigned = state.unassigned.length;
-
-            if (nGroups > 0) {
-                const avg = (total / nGroups).toFixed(1);
-                const uCls = nUnassigned > 0 ? 'text-[#7B1717]' : 'text-black';
-                statsText.innerHTML =
-                    `<span><strong class="text-black">${total}</strong> participant${total !== 1 ? 's' : ''}</span>` +
-                    `<span class="text-gray-300">·</span>` +
-                    `<span><strong class="text-black">${nGroups}</strong> group${nGroups !== 1 ? 's' : ''}</span>` +
-                    `<span class="text-gray-300">·</span>` +
-                    `<span>~<strong class="text-black">${avg}</strong> per group</span>` +
-                    `<span class="text-gray-300">·</span>` +
-                    `<span><strong class="${uCls}">${nUnassigned}</strong> unassigned</span>`;
-                statsBar.classList.remove('hidden');
-            } else {
-                statsBar.classList.add('hidden');
-            }
 
             if (nGroups > 0) {
                 unassignedSection.classList.remove('hidden');
@@ -612,9 +621,8 @@
             });
         } else {
             render();
-            updateLiveStats();
-            participantInput.addEventListener('input', updateLiveStats);
-            groupCountInput.addEventListener('input', updateLiveStats);
+            participantInput.addEventListener('input', refreshStatsBar);
+            groupCountInput.addEventListener('input', refreshStatsBar);
         }
     </script>
 </body>
