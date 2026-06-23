@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7B1717">
+    <title>Software Security – Group Assignment</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preload" href="/commons/fonts/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B4gaVI.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/commons/style.css">
+    <style>
+        .chip.dragging { opacity: 0.3; }
+        .drop-zone.drag-over {
+            background-color: #E6E6F8;
+            outline: 2px solid #17177B;
+            outline-offset: -2px;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <header class="text-center mb-10">
+        <img src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" class="mx-auto h-20 mb-4 rounded-lg" />
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Group Assignment</h1>
+        <p class="text-xl text-gray-500">Randomly assign training participants into groups</p>
+    </header>
+
+    <main class="max-w-6xl mx-auto space-y-6">
+
+        <!-- Controls card -->
+        <div class="bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+            <h2 class="text-2xl font-bold text-black mb-6 border-b pb-2">Setup</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                <!-- Participant names -->
+                <div class="md:col-span-2">
+                    <label for="participantInput" class="block text-sm font-medium text-gray-700 mb-1">
+                        Participants
+                        <span class="text-gray-400 font-normal">(one name per line)</span>
+                    </label>
+                    <textarea id="participantInput" rows="8"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm resize-y font-mono text-sm bg-[#E7E6E6]"
+                        placeholder="Alice&#10;Bob&#10;Charlie&#10;Dave&#10;Eve&#10;Frank&#10;Grace&#10;Heidi"></textarea>
+                </div>
+
+                <!-- Group count + actions -->
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <label for="groupCount" class="block text-sm font-medium text-gray-700 mb-1">Number of groups</label>
+                        <input type="number" id="groupCount" min="1" max="99" value="3"
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm bg-[#E7E6E6] text-center text-3xl font-bold">
+                    </div>
+                    <button onclick="assignRandomly()"
+                        class="w-full px-4 py-3 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-[#7B1717] focus:ring-offset-2">
+                        Assign Randomly
+                    </button>
+                    <button onclick="resetAssignments()"
+                        class="w-full px-4 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:border-gray-400 hover:bg-gray-50 transition duration-150">
+                        Reset Assignments
+                    </button>
+                    <button onclick="confirmResetAll()"
+                        class="w-full px-4 py-3 border-2 border-[#7B1717] text-[#7B1717] font-semibold rounded-lg hover:bg-[#F8E6E6] transition duration-150">
+                        Reset Everything
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast notification -->
+        <div id="toast" class="fixed top-6 right-6 z-50 hidden px-5 py-3 rounded-lg shadow-xl border text-sm font-medium max-w-xs pointer-events-none"></div>
+
+        <!-- Stats bar -->
+        <div id="statsBar" class="hidden bg-white px-6 py-3 rounded-xl shadow border border-gray-200 text-sm text-gray-600 flex flex-wrap items-center gap-x-5 gap-y-1"></div>
+
+        <!-- Unassigned pool -->
+        <div id="unassignedSection" class="hidden">
+            <div id="unassignedPool"
+                class="drop-zone bg-white rounded-xl shadow-lg border-2 border-dashed border-gray-300 p-5 transition-colors duration-150">
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Unassigned</p>
+                <div id="unassignedChips" class="flex flex-wrap gap-2 min-h-8"></div>
+            </div>
+        </div>
+
+        <!-- Groups grid -->
+        <div id="groupsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+
+    </main>
+
+    <footer class="mt-12 py-6 text-center text-sm text-gray-500">
+        <p class="mb-2">&copy; 2026 Software Security</p>
+        <ul class="flex justify-center gap-6 list-none p-0">
+            <li><a href="https://hannesmolsen.de/impressum.html" class="hover:underline">Impressum</a></li>
+            <li><a href="https://hannesmolsen.de/datenschutz.html" class="hover:underline">Datenschutz</a></li>
+            <li><a href="https://hannesmolsen.de" class="hover:underline">Hannes Molsen</a></li>
+        </ul>
+    </footer>
+
+    <script>
+        // ── State ──────────────────────────────────────────────────────────────
+        const STORAGE_KEY = 'ss-group-tool';
+
+        let state = {
+            participants: [],   // master list of all names
+            numGroups:    3,
+            groups:       [],   // array of string arrays
+            unassigned:   [],   // names not yet in any group
+        };
+
+        let drag = null; // { name: string, from: number }  -1 = unassigned pool
+
+        // ── DOM references ─────────────────────────────────────────────────────
+        const participantInput  = document.getElementById('participantInput');
+        const groupCountInput   = document.getElementById('groupCount');
+        const statsBar          = document.getElementById('statsBar');
+        const unassignedSection = document.getElementById('unassignedSection');
+        const unassignedPool    = document.getElementById('unassignedPool');
+        const unassignedChips   = document.getElementById('unassignedChips');
+        const groupsGrid        = document.getElementById('groupsGrid');
+        const toastEl           = document.getElementById('toast');
+
+        // ── Persistence ────────────────────────────────────────────────────────
+        function save() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function load() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                if (parsed && Array.isArray(parsed.participants)) state = parsed;
+            } catch (_) { /* ignore corrupt data */ }
+        }
+
+        // ── Toast ──────────────────────────────────────────────────────────────
+        const TOAST_STYLES = {
+            success: 'bg-[#E6F3E6] text-[#177B17] border-[#177B17]',
+            error:   'bg-[#F8E6E6] text-[#7B1717] border-[#7B1717]',
+            warning: 'bg-[#FFFDE6] text-[#DFDF17] border-[#DFDF17]',
+            info:    'bg-[#E6E6F8] text-[#17177B] border-[#17177B]',
+        };
+
+        function showToast(msg, type = 'info') {
+            toastEl.className = `fixed top-6 right-6 z-50 px-5 py-3 rounded-lg shadow-xl border text-sm font-medium max-w-xs pointer-events-none ${TOAST_STYLES[type]}`;
+            toastEl.textContent = msg;
+            clearTimeout(toastEl._t);
+            toastEl._t = setTimeout(() => toastEl.classList.add('hidden'), 3500);
+        }
+
+        // ── Render ─────────────────────────────────────────────────────────────
+        function render() {
+            // Sync controls
+            participantInput.value = state.participants.join('\n');
+            groupCountInput.value  = state.numGroups;
+
+            const total    = state.participants.length;
+            const nGroups  = state.groups.length;
+            const nUnassigned = state.unassigned.length;
+
+            // Stats bar
+            if (nGroups > 0) {
+                const avg = (total / nGroups).toFixed(1);
+                const unassignedClass = nUnassigned > 0 ? 'text-[#7B1717]' : 'text-black';
+                statsBar.innerHTML =
+                    `<span><strong class="text-black">${total}</strong> participant${total !== 1 ? 's' : ''}</span>` +
+                    `<span class="text-gray-300">·</span>` +
+                    `<span><strong class="text-black">${nGroups}</strong> group${nGroups !== 1 ? 's' : ''}</span>` +
+                    `<span class="text-gray-300">·</span>` +
+                    `<span>~<strong class="text-black">${avg}</strong> per group</span>` +
+                    `<span class="text-gray-300">·</span>` +
+                    `<span><strong class="${unassignedClass}">${nUnassigned}</strong> unassigned</span>`;
+                statsBar.classList.remove('hidden');
+            } else {
+                statsBar.classList.add('hidden');
+            }
+
+            // Unassigned pool
+            if (nGroups > 0) {
+                unassignedSection.classList.remove('hidden');
+                unassignedChips.innerHTML = '';
+                if (nUnassigned === 0) {
+                    const hint = document.createElement('p');
+                    hint.className = 'text-sm text-gray-300 italic';
+                    hint.textContent = 'All participants have been assigned';
+                    unassignedChips.appendChild(hint);
+                } else {
+                    state.unassigned.forEach(name =>
+                        unassignedChips.appendChild(makeChip(name, -1)));
+                }
+            } else {
+                unassignedSection.classList.add('hidden');
+            }
+
+            // Groups
+            groupsGrid.innerHTML = '';
+            state.groups.forEach((_, i) => groupsGrid.appendChild(makeGroupCard(i)));
+        }
+
+        // ── Group card ─────────────────────────────────────────────────────────
+        function makeGroupCard(idx) {
+            const card = document.createElement('div');
+            card.className = 'drop-zone bg-white rounded-xl border border-gray-200 shadow-lg p-5 flex flex-col min-h-36 transition-colors duration-150';
+            registerDropZone(card, idx);
+
+            // Header
+            const hdr = document.createElement('div');
+            hdr.className = 'flex justify-between items-center mb-3 pb-2 border-b border-gray-200';
+
+            const title = document.createElement('h3');
+            title.className = 'font-bold text-black';
+            title.textContent = `Group ${idx + 1}`;
+
+            const badge = document.createElement('span');
+            badge.className = 'text-xs text-gray-500 bg-[#E7E6E6] px-2 py-0.5 rounded-full tabular-nums';
+            badge.textContent = state.groups[idx].length;
+
+            hdr.appendChild(title);
+            hdr.appendChild(badge);
+            card.appendChild(hdr);
+
+            // Chips area
+            const area = document.createElement('div');
+            area.className = 'flex flex-wrap gap-2 flex-grow content-start';
+
+            if (state.groups[idx].length === 0) {
+                const hint = document.createElement('p');
+                hint.className = 'text-sm text-gray-300 italic';
+                hint.textContent = 'Drop participants here';
+                area.appendChild(hint);
+            } else {
+                state.groups[idx].forEach(name => area.appendChild(makeChip(name, idx)));
+            }
+
+            card.appendChild(area);
+            return card;
+        }
+
+        // ── Chip ───────────────────────────────────────────────────────────────
+        function makeChip(name, fromGroup) {
+            const chip = document.createElement('div');
+            chip.className = 'chip flex items-center gap-1.5 px-3 py-1.5 bg-[#E7E6E6] border border-gray-300 rounded-full text-sm cursor-grab select-none hover:border-gray-400 hover:bg-gray-100 active:cursor-grabbing transition-colors';
+            chip.draggable = true;
+
+            // 2×3 grip dots
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', '8');
+            svg.setAttribute('height', '12');
+            svg.setAttribute('viewBox', '0 0 8 12');
+            svg.setAttribute('fill', '#9CA3AF');
+            svg.setAttribute('aria-hidden', 'true');
+            [[1,1],[5,1],[1,5],[5,5],[1,9],[5,9]].forEach(([cx, cy]) => {
+                const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                c.setAttribute('cx', cx);
+                c.setAttribute('cy', cy);
+                c.setAttribute('r', '1.5');
+                svg.appendChild(c);
+            });
+            chip.appendChild(svg);
+
+            const label = document.createElement('span');
+            label.textContent = name;
+            chip.appendChild(label);
+
+            chip.addEventListener('dragstart', e => {
+                drag = { name, from: fromGroup };
+                e.dataTransfer.effectAllowed = 'move';
+                // defer so browser captures the chip before it fades
+                setTimeout(() => chip.classList.add('dragging'), 0);
+            });
+            chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
+
+            return chip;
+        }
+
+        // ── Drop zone wiring ───────────────────────────────────────────────────
+        function registerDropZone(el, toGroup) {
+            el.addEventListener('dragover', e => {
+                e.preventDefault();
+                el.classList.add('drag-over');
+            });
+            el.addEventListener('dragleave', e => {
+                if (!el.contains(e.relatedTarget)) el.classList.remove('drag-over');
+            });
+            el.addEventListener('drop', e => {
+                e.preventDefault();
+                el.classList.remove('drag-over');
+                if (!drag || drag.from === toGroup) { drag = null; return; }
+                movePerson(drag.name, drag.from, toGroup);
+                drag = null;
+            });
+        }
+
+        registerDropZone(unassignedPool, -1);
+
+        // ── Move ───────────────────────────────────────────────────────────────
+        function movePerson(name, from, to) {
+            if (from === -1) state.unassigned = state.unassigned.filter(n => n !== name);
+            else             state.groups[from] = state.groups[from].filter(n => n !== name);
+
+            if (to === -1) state.unassigned.push(name);
+            else           state.groups[to].push(name);
+
+            save();
+            render();
+        }
+
+        // ── Actions ────────────────────────────────────────────────────────────
+        function assignRandomly() {
+            const names  = participantInput.value.split('\n').map(n => n.trim()).filter(Boolean);
+            const unique = [...new Set(names)];
+            const n      = Math.max(1, parseInt(groupCountInput.value) || 3);
+
+            if (unique.length === 0) {
+                showToast('Enter at least one participant name.', 'warning');
+                return;
+            }
+
+            state.participants = unique;
+            state.numGroups    = n;
+            state.unassigned   = [];
+            state.groups       = Array.from({ length: n }, () => []);
+
+            // Fisher-Yates shuffle then round-robin into groups
+            const shuffled = [...unique];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            shuffled.forEach((p, i) => state.groups[i % n].push(p));
+
+            save();
+            render();
+            showToast(`${unique.length} participant${unique.length !== 1 ? 's' : ''} assigned to ${n} group${n !== 1 ? 's' : ''}.`, 'success');
+        }
+
+        function resetAssignments() {
+            if (state.participants.length === 0) {
+                showToast('No participants loaded yet.', 'warning');
+                return;
+            }
+            state.unassigned = [...state.participants];
+            state.groups     = Array.from({ length: state.numGroups }, () => []);
+            save();
+            render();
+            showToast('All participants moved back to unassigned.', 'info');
+        }
+
+        function confirmResetAll() {
+            if (!confirm('Reset everything? All participants and groups will be cleared.')) return;
+            state = { participants: [], numGroups: 3, groups: [], unassigned: [] };
+            localStorage.removeItem(STORAGE_KEY);
+            render();
+            showToast('Reset complete.', 'info');
+        }
+
+        // ── Boot ───────────────────────────────────────────────────────────────
+        load();
+        render();
+    </script>
+</body>
+</html>

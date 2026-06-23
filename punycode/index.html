@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7B1717">
+    <title>Software Security – Punycode Encoder &amp; Decoder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preload" href="/commons/fonts/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B4gaVI.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/commons/style.css">
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <header class="text-center mb-10">
+        <img src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" class="mx-auto h-20 mb-4 rounded-lg" />
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Punycode Encoder &amp; Decoder</h1>
+        <p class="text-xl text-gray-500">Convert between internationalized domain names and their ASCII representation</p>
+    </header>
+
+    <main class="max-w-4xl mx-auto space-y-8">
+
+        <!-- Explanation -->
+        <div class="bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+            <h2 class="text-2xl font-bold text-black mb-4 border-b pb-2">What is Punycode?</h2>
+            <div class="space-y-4 text-gray-700 text-sm leading-relaxed">
+                <p>
+                    <strong>Punycode</strong> (RFC 3492) is an encoding scheme that converts Unicode strings to ASCII.
+                    It enables <strong>Internationalized Domain Names (IDN)</strong> — domain names containing accented
+                    or non-Latin characters such as <code class="bg-[#E7E6E6] px-1 rounded font-mono">münchen.de</code>
+                    or <code class="bg-[#E7E6E6] px-1 rounded font-mono">пример.испытание</code> — to function within
+                    the DNS infrastructure, which only supports ASCII.
+                </p>
+                <p>
+                    Each dot-separated label is encoded independently. Labels containing non-ASCII characters receive
+                    the prefix <code class="bg-[#E7E6E6] px-1 rounded font-mono">xn--</code>, followed by the ASCII
+                    characters of the label and then the encoded positions and code points of the non-ASCII characters
+                    using a compact base-36 scheme. Pure-ASCII labels are left untouched.
+                </p>
+
+                <div class="bg-[#E7E6E6] rounded-lg p-4 font-mono text-sm space-y-1">
+                    <div class="flex gap-4">
+                        <span class="text-gray-500 w-28 shrink-0">Unicode</span>
+                        <span>münchen.de</span>
+                    </div>
+                    <div class="flex gap-4">
+                        <span class="text-gray-500 w-28 shrink-0">Punycode</span>
+                        <span class="text-[#7B1717]">xn--mnchen-3ya.de</span>
+                    </div>
+                    <div class="border-t border-gray-300 my-2"></div>
+                    <div class="flex gap-4">
+                        <span class="text-gray-500 w-28 shrink-0">Unicode</span>
+                        <span>пример.испытание</span>
+                    </div>
+                    <div class="flex gap-4">
+                        <span class="text-gray-500 w-28 shrink-0">Punycode</span>
+                        <span class="text-[#7B1717]">xn--e1afmapc.xn--80akhbyknj4f</span>
+                    </div>
+                </div>
+
+                <p>
+                    In <code class="bg-[#E7E6E6] px-1 rounded font-mono">münchen</code> the ASCII characters
+                    <code class="bg-[#E7E6E6] px-1 rounded font-mono">mnchen</code> are kept as-is, a hyphen delimiter
+                    is appended, and the position and code point of the <code class="bg-[#E7E6E6] px-1 rounded font-mono">ü</code>
+                    are encoded as <code class="bg-[#E7E6E6] px-1 rounded font-mono">3ya</code> — giving
+                    <code class="bg-[#E7E6E6] px-1 rounded font-mono">xn--mnchen-3ya</code>.
+                </p>
+
+                <div class="border-l-4 border-[#7B1717] pl-4 py-2 bg-[#F8E6E6] rounded-r-lg">
+                    <p class="font-semibold text-[#7B1717] mb-1">Security: Homograph Attacks</p>
+                    <p>
+                        Visually identical characters from different Unicode scripts — for example the Cyrillic
+                        <code class="bg-white px-1 rounded font-mono">а</code> (U+0430) versus the Latin
+                        <code class="bg-white px-1 rounded font-mono">a</code> (U+0061) — can produce domain names
+                        that appear identical to trusted sites but resolve to entirely different addresses.
+                        Decoding a suspicious domain to its Punycode form immediately reveals such spoofing.
+                        Example: <code class="bg-white px-1 rounded font-mono">аpple.com</code> (Cyrillic а)
+                        → <code class="bg-white px-1 rounded font-mono text-[#7B1717]">xn--pple-43d.com</code>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Encode / Decode columns -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- 1. Unicode → Punycode -->
+            <div class="bg-white p-6 rounded-xl shadow-2xl flex flex-col">
+                <h2 class="text-2xl font-bold text-black mb-4 border-b pb-2">1. Unicode → Punycode</h2>
+
+                <label for="unicodeInput" class="block text-sm font-medium text-gray-700 mb-1">
+                    Internationalized URL or domain:
+                </label>
+                <textarea id="unicodeInput" rows="3"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm resize-none font-mono text-sm bg-[#E7E6E6]"
+                    placeholder="münchen.de&#10;https://münchen.de/search?q=1&#10;пример.испытание"></textarea>
+
+                <div id="encodeStatus" class="mt-3 p-3 rounded-lg border hidden text-sm"></div>
+
+                <label class="block text-sm font-medium text-gray-700 mt-4 mb-1">Punycode result:</label>
+                <div id="punycodeOutput"
+                    class="flex-grow min-h-[4.5rem] p-3 bg-[#E7E6E6] border border-dashed border-gray-300 rounded-lg font-mono text-sm text-gray-800 break-all whitespace-pre-wrap"></div>
+
+                <button id="copyEncodeBtn" onclick="copyOutput('punycodeOutput', 'copyEncodeBtn', 'Copy Punycode')"
+                    class="mt-4 w-full px-4 py-3 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-[#7B1717] focus:ring-offset-2">
+                    Copy Punycode
+                </button>
+            </div>
+
+            <!-- 2. Punycode → Unicode -->
+            <div class="bg-white p-6 rounded-xl shadow-2xl flex flex-col">
+                <h2 class="text-2xl font-bold text-black mb-4 border-b pb-2">2. Punycode → Unicode</h2>
+
+                <label for="punycodeInput" class="block text-sm font-medium text-gray-700 mb-1">
+                    Punycode URL or domain:
+                </label>
+                <textarea id="punycodeInput" rows="3"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm resize-none font-mono text-sm bg-[#E7E6E6]"
+                    placeholder="xn--mnchen-3ya.de&#10;https://xn--mnchen-3ya.de/search?q=1&#10;xn--pple-43d.com"></textarea>
+
+                <div id="decodeStatus" class="mt-3 p-3 rounded-lg border hidden text-sm"></div>
+
+                <label class="block text-sm font-medium text-gray-700 mt-4 mb-1">Unicode result:</label>
+                <div id="unicodeOutput"
+                    class="flex-grow min-h-[4.5rem] p-3 bg-[#E7E6E6] border border-dashed border-gray-300 rounded-lg font-mono text-sm text-gray-800 break-all whitespace-pre-wrap"></div>
+
+                <button id="copyDecodeBtn" onclick="copyOutput('unicodeOutput', 'copyDecodeBtn', 'Copy Unicode')"
+                    class="mt-4 w-full px-4 py-3 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-[#7B1717] focus:ring-offset-2">
+                    Copy Unicode
+                </button>
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="mt-12 py-6 text-center text-sm text-gray-500">
+        <p class="mb-2">&copy; 2026 Software Security</p>
+        <ul class="flex justify-center gap-6 list-none p-0">
+            <li><a href="https://hannesmolsen.de/impressum.html" class="hover:underline">Impressum</a></li>
+            <li><a href="https://hannesmolsen.de/datenschutz.html" class="hover:underline">Datenschutz</a></li>
+            <li><a href="https://hannesmolsen.de" class="hover:underline">Hannes Molsen</a></li>
+        </ul>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/punycode@2.3.1/punycode.js"></script>
+    <script>
+        const unicodeInput   = document.getElementById('unicodeInput');
+        const punycodeInput  = document.getElementById('punycodeInput');
+        const punycodeOutput = document.getElementById('punycodeOutput');
+        const unicodeOutput  = document.getElementById('unicodeOutput');
+        const encodeStatus   = document.getElementById('encodeStatus');
+        const decodeStatus   = document.getElementById('decodeStatus');
+
+        // ── Helpers ────────────────────────────────────────────────────
+
+        function showStatus(el, message, type) {
+            const map = {
+                success: 'bg-[#E6F3E6] text-[#177B17] border-[#177B17]',
+                error:   'bg-[#F8E6E6] text-[#7B1717] border-[#7B1717]',
+                warning: 'bg-[#FFFDE6] text-[#DFDF17] border-[#DFDF17]',
+                info:    'bg-[#E6E6F8] text-[#17177B] border-[#17177B]',
+            };
+            el.className = `mt-3 p-3 rounded-lg border text-sm ${map[type]}`;
+            el.textContent = message;
+            el.classList.remove('hidden');
+            clearTimeout(el._t);
+            el._t = setTimeout(() => el.classList.add('hidden'), 5000);
+        }
+
+        // Splits an input string into [prefix, hostname, suffix] without
+        // touching the path, query, or fragment.
+        // prefix = protocol + optional userinfo  (e.g. "https://user@")
+        // suffix = port + path + query + fragment (e.g. ":8080/path?q=1#sec")
+        function splitHost(input) {
+            const proto = /^[a-z][a-z0-9+\-.]*:\/\//i.test(input);
+            if (proto) {
+                const m = input.match(/^([a-z][a-z0-9+\-.]*:\/\/(?:[^@\/]*@)?)([^/:?#]+)(.*)/is);
+                if (!m) throw new Error('Cannot parse URL.');
+                return { prefix: m[1], host: m[2], suffix: m[3] };
+            } else {
+                const m = input.match(/^([^/:?#]+)(.*)/s);
+                if (!m) throw new Error('Cannot parse domain.');
+                return { prefix: '', host: m[1], suffix: m[2] };
+            }
+        }
+
+        function toASCII(input) {
+            const { prefix, host, suffix } = splitHost(input);
+            return prefix + punycode.toASCII(host) + suffix;
+        }
+
+        function toUnicode(input) {
+            const { prefix, host, suffix } = splitHost(input);
+            return prefix + punycode.toUnicode(host) + suffix;
+        }
+
+        // ── Live conversion ────────────────────────────────────────────
+
+        unicodeInput.addEventListener('input', () => {
+            const val = unicodeInput.value.trim();
+            if (!val) { punycodeOutput.textContent = ''; encodeStatus.classList.add('hidden'); return; }
+            try {
+                const result = toASCII(val);
+                punycodeOutput.textContent = result;
+                if (result === val) {
+                    showStatus(encodeStatus, 'Input is already pure ASCII — no encoding needed.', 'info');
+                } else {
+                    encodeStatus.classList.add('hidden');
+                }
+            } catch (e) {
+                punycodeOutput.textContent = '';
+                showStatus(encodeStatus, 'Error: ' + e.message, 'error');
+            }
+        });
+
+        punycodeInput.addEventListener('input', () => {
+            const val = punycodeInput.value.trim();
+            if (!val) { unicodeOutput.textContent = ''; decodeStatus.classList.add('hidden'); return; }
+            try {
+                const result = toUnicode(val);
+                unicodeOutput.textContent = result;
+                if (result === val) {
+                    showStatus(decodeStatus, 'No xn-- labels found — input contains no Punycode.', 'info');
+                } else {
+                    decodeStatus.classList.add('hidden');
+                }
+            } catch (e) {
+                unicodeOutput.textContent = '';
+                showStatus(decodeStatus, 'Error: ' + e.message, 'error');
+            }
+        });
+
+        // ── Copy ───────────────────────────────────────────────────────
+
+        function copyOutput(outputId, btnId, label) {
+            const text = document.getElementById(outputId).textContent.trim();
+            if (!text) return;
+            const tmp = document.createElement('textarea');
+            tmp.value = text;
+            document.body.appendChild(tmp);
+            tmp.select();
+            document.execCommand('copy');
+            document.body.removeChild(tmp);
+            const btn = document.getElementById(btnId);
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = label, 2000);
+        }
+    </script>
+</body>
+</html>
