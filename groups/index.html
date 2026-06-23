@@ -54,6 +54,7 @@
                         <textarea id="participantInput" rows="8"
                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm resize-y font-mono text-sm bg-[#E7E6E6]"
                             placeholder="Alice&#10;Bob&#10;Charlie&#10;Dave&#10;Eve&#10;Frank&#10;Grace&#10;Heidi"></textarea>
+                        <p id="liveStats" class="text-sm text-gray-500 mt-2 min-h-[1.25rem]"></p>
                     </div>
 
                     <div class="flex flex-col gap-3">
@@ -220,11 +221,25 @@
         const groupCountInput   = document.getElementById('groupCount');
         const statsBar          = document.getElementById('statsBar');
         const statsText         = document.getElementById('statsText');
+        const liveStats         = document.getElementById('liveStats');
         const unassignedSection = document.getElementById('unassignedSection');
         const unassignedPool    = document.getElementById('unassignedPool');
         const unassignedChips   = document.getElementById('unassignedChips');
         const groupsGrid        = document.getElementById('groupsGrid');
         const toastEl           = document.getElementById('toast');
+
+        // ── Live stats preview ─────────────────────────────────────────────────
+        function updateLiveStats() {
+            const names  = participantInput.value.split('\n').map(n => n.trim()).filter(Boolean);
+            const unique = [...new Set(names)];
+            const n      = unique.length;
+            const g      = Math.max(1, parseInt(groupCountInput.value) || 3);
+            if (n === 0) { liveStats.textContent = ''; return; }
+            const lo = Math.floor(n / g);
+            const hi = Math.ceil(n / g);
+            const perGroup = lo === hi ? `${lo}` : `${lo}–${hi}`;
+            liveStats.textContent = `${n} participant${n !== 1 ? 's' : ''} · ${perGroup} per group`;
+        }
 
         // ── Persistence ────────────────────────────────────────────────────────
         function save() {
@@ -597,6 +612,9 @@
             });
         } else {
             render();
+            updateLiveStats();
+            participantInput.addEventListener('input', updateLiveStats);
+            groupCountInput.addEventListener('input', updateLiveStats);
         }
     </script>
 </body>
