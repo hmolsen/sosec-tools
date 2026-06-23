@@ -31,6 +31,7 @@ A shared stylesheet and font live in `commons/` at the repo root. **Always use t
 
 | Class | Purpose |
 |---|---|
+| `ss-nav` | "All Tools" back-navigation wrapper |
 | `ss-header` | Centered page header wrapper |
 | `ss-card` | White rounded card with shadow (use instead of Bootstrap `.card` overrides) |
 | `ss-input` | Styled text input / textarea |
@@ -41,6 +42,27 @@ A shared stylesheet and font live in `commons/` at the repo root. **Always use t
 Bootstrap overrides (rounded corners, colors) are applied automatically when Bootstrap is present — no extra classes needed on `.card`, `.form-control`, `.btn-primary`, etc.
 
 Do **not** copy the font file into individual tool directories. Do **not** re-declare `@font-face` locally.
+
+---
+
+## Back Navigation
+
+Every tool page (except the index) must include an "All Tools" back link as the **first element inside `<body>`**, before the header. The body must use `p-4 md:p-8` padding (not flex centering) so the nav sits flush at the top-left.
+
+```html
+<nav class="mb-6">
+    <a href="/" class="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[#7B1717] transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        All Tools
+    </a>
+</nav>
+```
+
+The `ss-nav` class in `commons/style.css` provides equivalent styling for non-Tailwind tools.
+
+Content centering is done on the **content container** (`max-w-4xl mx-auto` or `max-w-xl mx-auto`), never on the body.
 
 ---
 

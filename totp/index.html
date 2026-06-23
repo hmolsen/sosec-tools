@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7B1717">
+    <title>TOTP Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preload" href="/commons/fonts/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B4gaVI.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/commons/style.css">
+    <style>
+        .totp-code {
+            letter-spacing: 0.5rem;
+            font-variant-numeric: tabular-nums;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#7B1717',
+                        'success': '#177B17',
+                        'error-text': '#C05C5C',
+                        'neutral-border': '#E7E6E6',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <nav class="mb-6">
+        <a href="/" class="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[#7B1717] transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            All Tools
+        </a>
+    </nav>
+
+    <header class="text-center mb-10">
+        <!-- Placeholder for User Logo --> 
+        <img id="userLogo" src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" class="mx-auto h-20 mb-4 rounded-lg" /> 
+        <h1 class="text-4xl font-extrabold text-black mb-2"> TOTP Generator </h1> 
+        <p class="text-xl text-gray-500">Generate current, previous, and next TOTP Tokens</p> 
+    </header>
+
+    <div class="max-w-xl mx-auto bg-white shadow-2xl rounded-xl p-8 space-y-6 md:p-10">
+        
+        <!-- Input Section -->
+        <div>
+            <label for="otp-uri" class="block text-sm font-medium text-gray-700 mb-2">
+                TOTP URI (otpauth://totp/...)
+            </label>
+            <input type="text" id="otp-uri"
+                   placeholder="e.g., otpauth://totp/Example:user@host?secret=JBSWY3DPEHPK3PXP"
+                   class="w-full px-4 py-3 border border-neutral-border rounded-lg focus:ring-primary focus:border-primary transition duration-150 shadow-inner text-sm"
+                   oninput="handleInput()">
+            <p id="uri-status" class="mt-2 text-sm h-5"></p>
+        </div>
+
+        <!-- Time Offset Input -->
+        <div class="pt-4">
+            <label for="time-offset-seconds" class="block text-sm font-medium text-gray-700 mb-2">
+                Time Offset (Seconds)
+            </label>
+            <input type="number" id="time-offset-seconds" value="0"
+                   placeholder="Enter seconds to adjust current time (e.g., 30 for the next period)"
+                   class="w-full px-4 py-3 border border-neutral-border rounded-lg focus:ring-primary focus:border-primary transition duration-150 shadow-inner text-sm"
+                   oninput="handleTimeOffsetChange()">
+            <p class="mt-1 text-xs text-gray-500">
+                Adjust time (positive or negative) to test previous/next TOTP periods.
+            </p>
+        </div>
+
+        <!-- Generated Code Display -->
+        <div class="bg-gray-50 border border-neutral-border p-6 rounded-xl text-center shadow-lg space-y-4">
+            <p class="text-xl font-semibold text-gray-500 uppercase tracking-widest">
+                Current TOTP Code
+            </p>
+            
+            <div id="totp-display" class="totp-code text-6xl font-black text-primary select-all transition duration-300">
+                ------
+            </div>
+            
+            <!-- Main Copy Button -->
+            <button id="copy-button" onclick="copyMainCode(this)"
+                    class="mt-4 px-4 py-2 bg-primary text-white font-semibold rounded-lg shadow-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition duration-150 flex items-center justify-center mx-auto space-x-2 disabled:opacity-50"
+                    disabled>
+                <!-- SVG Copy Icon (Lucide Copy) -->
+                <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy">
+                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                </svg>
+                <span id="copy-text">Copy Code</span>
+            </button>
+            
+            <!-- Timer Bar -->
+            <div class="relative pt-1">
+                <div class="flex mb-2 items-center justify-between">
+                    <div class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-success bg-success/10">
+                        Expires in <span id="time-left">30</span>s
+                    </div>
+                </div>
+                <div class="flex h-2 mb-4 overflow-hidden text-xs flex-col rounded bg-neutral-border">
+                    <div id="progress-bar" 
+                         class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-success transition-all duration-100 ease-linear" 
+                         style="width: 100%;">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Table for History/Future Codes -->
+        <div class="pt-8">
+            <h2 class="text-xl font-bold text-gray-800 mb-4 text-center">Previous (10) and Next (10) Codes</h2>
+            <div class="overflow-x-auto rounded-lg shadow-xl border border-neutral-border">
+                <table class="min-w-full divide-y divide-neutral-border" id="history-table">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-neutral-border" id="history-table-body">
+                        <!-- Rows will be dynamically injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <p class="text-xs text-gray-500 text-center pt-4">
+            TOTP generation is performed entirely in your browser using JavaScript and the Web Crypto API. No data is transmitted.
+        </p>
+
+    </div>
+
+    <script>
+        // Global state
+        let currentSecretBase32 = null;
+        let intervalId = null;
+        let timeOffsetSeconds = 0; // Time offset storage
+
+        // --- Core Base32 Decoder (for RFC 4648) ---
+        function base32ToUint8Array(base32) {
+            const map = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            base32 = base32.toUpperCase().replace(/[\s-=]/g, '');
+
+            if (base32.length === 0) return new Uint8Array(0);
+
+            let bits = 0;
+            let value = 0;
+            let index = 0;
+            const output = new Uint8Array(Math.floor(base32.length * 5 / 8));
+            
+            for (let i = 0; i < base32.length; i++) {
+                const char = base32[i];
+                const charValue = map.indexOf(char);
+
+                if (charValue === -1) {
+                    throw new Error('Invalid Base32 character: ' + char);
+                }
+
+                value = (value << 5) | charValue;
+                bits += 5;
+
+                while (bits >= 8) {
+                    output[index++] = (value >>> (bits - 8)) & 0xFF;
+                    bits -= 8;
+                }
+            }
+            return output.slice(0, index);
+        }
+
+        // --- TOTP Logic (RFC 6238) ---
+
+        /**
+         * Calculates the TOTP code asynchronously using the Web Crypto API.
+         * @param {Uint8Array} key - The raw HMAC key (decoded secret).
+         * @param {number} timeStep - The time step (T) counter value.
+         * @returns {Promise<string>} - The 6-digit TOTP code.
+         */
+        async function calculateTotp(key, timeStep) {
+            const timeBuffer = new ArrayBuffer(8);
+            const view = new DataView(timeBuffer);
+            // Counter (T) is a big-endian 64-bit integer
+            view.setUint32(0, 0, false); // First 32 bits (high part) is 0
+            view.setUint32(4, timeStep, false); // Last 32 bits (low part) is the counter
+
+            // 1. Import the key
+            const importedKey = await crypto.subtle.importKey(
+                'raw',
+                key,
+                { name: 'HMAC', hash: 'SHA-1' },
+                false, 
+                ['sign']
+            );
+
+            // 2. Sign (HMAC-SHA1) the time buffer
+            const signature = await crypto.subtle.sign(
+                'HMAC',
+                importedKey,
+                timeBuffer
+            );
+
+            // 3. Perform Dynamic Truncation (OATH Algorithm)
+            const hash = new Uint8Array(signature);
+            const offset = hash[hash.length - 1] & 0x0F; // Last 4 bits define the offset
+            
+            // Extract 4 bytes starting at the offset
+            const truncatedHashView = new DataView(hash.buffer, offset, 4);
+            let binary = truncatedHashView.getUint32(0, false); // Big-endian
+            
+            // Mask out the most significant bit (always zero in signed int)
+            binary = binary & 0x7FFFFFFF; 
+
+            // 4. Calculate the modulus and format
+            const code = binary % 1000000; // 6-digit code
+            return String(code).padStart(6, '0');
+        }
+        
+        // --- Clipboard Helper ---
+
+        /**
+         * Generic function to copy a string to the clipboard and provide feedback on the button.
+         * @param {string} codeToCopy - The TOTP code to copy.
+         * @param {HTMLElement} buttonElement - The button that was clicked (for feedback).
+         */
+        function copyCode(codeToCopy, buttonElement) {
+            // Use a temporary textarea for selection and copy (required for execCommand)
+            const tempInput = document.createElement('textarea');
+            tempInput.value = codeToCopy;
+            // Prevent the textarea from being visible or affecting layout
+            tempInput.style.position = 'absolute';
+            tempInput.style.left = '-9999px';
+            document.body.appendChild(tempInput);
+            tempInput.select();
+
+            let originalInnerHtml = buttonElement.innerHTML;
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    // Success feedback
+                    // Check-Check Icon (Lucide check-check)
+                    buttonElement.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${buttonElement.id === 'copy-button' ? 20 : 16}" height="${buttonElement.id === 'copy-button' ? 20 : 16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-check ${buttonElement.id === 'copy-button' ? 'mr-2' : ''}"><path d="M15 6 9 12l-3-3"/><path d="m18 9 3-3"/><path d="m21 12-3 3"/></svg> ${buttonElement.id === 'copy-button' ? 'Copied!' : ''}`;
+                    buttonElement.classList.add('bg-success'); // Use success color for feedback
+                    buttonElement.classList.remove('bg-primary');
+                } else {
+                    buttonElement.textContent = 'Failed';
+                }
+            } catch (err) {
+                console.error('Copy command failed:', err);
+                buttonElement.textContent = 'Error';
+            } finally {
+                // Clean up temporary element
+                document.body.removeChild(tempInput);
+
+                // Reset button state after a short delay
+                setTimeout(() => {
+                    buttonElement.innerHTML = originalInnerHtml;
+                    // Reset to primary color
+                    buttonElement.classList.remove('bg-success');
+                    buttonElement.classList.add('bg-primary');
+                }, 1500);
+            }
+        }
+        
+        // Handler for the main TOTP code button
+        function copyMainCode(buttonElement) {
+            const code = document.getElementById('totp-display').textContent.trim();
+            copyCode(code, buttonElement);
+        }
+
+
+        /**
+         * Generates and updates the table of past and future TOTP codes.
+         */
+        async function generateHistoricalCodes(T_current, stepSeconds) {
+            if (!currentSecretBase32) return;
+
+            const tableBody = document.getElementById('history-table-body');
+            let html = '';
+            
+            // Decode the Base32 secret once
+            const key = base32ToUint8Array(currentSecretBase32);
+            
+            // Calculate 10 past and 10 future codes (range T-10 to T-1 and T+1 to T+10)
+            const rangeStart = T_current - 10;
+            const rangeEnd = T_current + 10;
+            
+            for (let T = rangeStart; T <= rangeEnd; T++) {
+                // Skip the current period, which is displayed above
+                if (T === T_current) continue;
+                
+                try {
+                    const code = await calculateTotp(key, T);
+                    
+                    // Convert T counter back to milliseconds and then to a readable date
+                    const timestampMs = T * stepSeconds * 1000;
+                    const date = new Date(timestampMs);
+                    // Use locale settings for consistent date formatting
+                    const timestamp = date.toLocaleString('en-US', { 
+                        year: 'numeric', month: 'short', day: 'numeric', 
+                        hour: '2-digit', minute: '2-digit', second: '2-digit' 
+                    });
+                    
+                    const isPast = T < T_current;
+                    const rowClass = isPast 
+                        ? 'bg-gray-50 hover:bg-gray-100 text-gray-500' 
+                        : 'bg-white hover:bg-gray-100 text-gray-700'; // Using gray-100 for hover for simplicity
+                    
+                    // Escape the code string for the onclick handler
+                    const escapedCode = code.replace(/'/g, "\\'");
+                    
+                    html += `
+                        <tr class="${rowClass} transition duration-150 ease-in-out">
+                            <td class="px-4 py-2 whitespace-nowrap text-xs font-medium border-l-4 ${T < T_current ? 'border-neutral-border' : 'border-success'}">
+                                ${timestamp}
+                            </td>
+                            <td class="px-4 py-2 whitespace-nowrap text-lg text-center font-mono totp-code tracking-wider">
+                                ${code}
+                            </td>
+                            <td class="px-4 py-2 whitespace-nowrap text-center">
+                                <button onclick="copyCode('${escapedCode}', this)"
+                                    class="inline-flex items-center justify-center p-2 border border-transparent rounded-full text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition duration-150">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy">
+                                        <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                                        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                                    </svg>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+
+                } catch (error) {
+                    console.error('Error calculating historical code:', error);
+                }
+            }
+            
+            tableBody.innerHTML = html;
+        }
+
+
+        /**
+         * Handler for the new time offset input field.
+         */
+        function handleTimeOffsetChange() {
+            const offsetInput = document.getElementById('time-offset-seconds');
+            const value = parseInt(offsetInput.value, 10);
+            
+            // Check if input is a valid number, default to 0 if not or empty
+            timeOffsetSeconds = isNaN(value) ? 0 : value;
+            
+            // Trigger an immediate TOTP update to reflect the change
+            updateTotp();
+        }
+
+        /**
+         * Main function to parse URI, decode secret, and update the TOTP code.
+         */
+        async function updateTotp() {
+            const copyButton = document.getElementById('copy-button');
+            
+            // Calculate adjusted time using the user-provided offset
+            const offsetMs = timeOffsetSeconds * 1000;
+            const now = Date.now() + offsetMs; 
+            
+            const stepSeconds = 30; // TOTP step duration
+            
+            // Calculate current time step (T)
+            const T = Math.floor(now / 1000 / stepSeconds);
+            
+            // Remaining seconds calculation uses the adjusted 'now'
+            const secondsElapsedInPeriod = Math.floor((now / 1000) % stepSeconds);
+            const remainingSeconds = stepSeconds - secondsElapsedInPeriod;
+
+
+            const display = document.getElementById('totp-display');
+            const timeLeft = document.getElementById('time-left');
+            const progressBar = document.getElementById('progress-bar');
+            
+            // Update the display for time remaining in the current T block
+            timeLeft.textContent = remainingSeconds;
+            progressBar.style.width = `${(remainingSeconds / stepSeconds) * 100}%`;
+
+            if (!currentSecretBase32) {
+                display.textContent = '------';
+                copyButton.disabled = true;
+                document.getElementById('history-table-body').innerHTML = '';
+                return;
+            }
+
+            try {
+                // Decode the Base32 secret
+                const key = base32ToUint8Array(currentSecretBase32);
+
+                // Calculate the code
+                const code = await calculateTotp(key, T);
+                display.textContent = code;
+                display.classList.remove('text-error-text'); // Remove error class
+                display.classList.add('text-primary');
+                copyButton.disabled = false; // Enable copy button on successful calculation
+                
+                // Generate and update the table of historical codes
+                await generateHistoricalCodes(T, stepSeconds);
+
+
+            } catch (error) {
+                console.error("TOTP Calculation Error:", error);
+                display.textContent = 'ERROR!';
+                display.classList.remove('text-primary');
+                display.classList.add('text-error-text'); // Use error color
+                document.getElementById('uri-status').textContent = 'Error calculating TOTP. Check URI format/Base32 secret.';
+                copyButton.disabled = true; // Disable copy button on error
+                document.getElementById('history-table-body').innerHTML = '';
+            }
+        }
+
+        /**
+         * Parses the otpauth URI and extracts the secret.
+         * @param {string} uri - The input string.
+         */
+        function handleInput() {
+            const uriInput = document.getElementById('otp-uri').value.trim();
+            const status = document.getElementById('uri-status');
+            
+            // Clear previous state
+            currentSecretBase32 = null;
+            status.textContent = '';
+            
+            if (uriInput === '') {
+                updateTotp(); // Clears display
+                return;
+            }
+
+            try {
+                // Check if URI is a valid format (otpauth://...)
+                const url = new URL(uriInput);
+                if (url.protocol !== 'otpauth:') {
+                    throw new Error('Invalid protocol. Must start with otpauth://');
+                }
+
+                // Custom parsing for the secret parameter
+                const secretMatch = uriInput.match(/[?&]secret=([^&]+)/i);
+
+                if (!secretMatch || secretMatch.length < 2) {
+                    throw new Error('Secret parameter not found in URI.');
+                }
+                
+                const secret = secretMatch[1];
+                
+                // Attempt to decode and validate Base32
+                base32ToUint8Array(secret); 
+                
+                currentSecretBase32 = secret;
+                status.textContent = 'URI parsed successfully!';
+                status.classList.remove('text-error-text');
+                status.classList.add('text-success');
+            } catch (e) {
+                console.error("URI Parsing Error:", e);
+                status.textContent = `Invalid URI: ${e.message}`;
+                status.classList.remove('text-success');
+                status.classList.add('text-error-text');
+            }
+
+            // Immediately calculate the new code.
+            updateTotp();
+        }
+
+        /**
+         * Initializes the application and starts the refresh loop.
+         */
+        function initializeApp() {
+            // Check for Web Crypto API support
+            if (typeof crypto === 'undefined' || !crypto.subtle) {
+                document.getElementById('totp-display').textContent = 'API ERROR';
+                document.getElementById('uri-status').textContent = 'Web Crypto API not supported in this environment.';
+                return;
+            }
+            
+            // Read the initial time offset (default 0)
+            handleTimeOffsetChange();
+            
+            // Set up the interval to update the code every second
+            if (intervalId) clearInterval(intervalId);
+            intervalId = setInterval(updateTotp, 1000);
+            
+            // Initial run
+            updateTotp();
+        }
+
+        window.onload = initializeApp;
+    </script>
+
+    <footer class="mt-12 py-6 text-center text-sm text-gray-500">
+        <p class="mb-2">&copy; 2026 Software Security</p>
+        <ul class="flex justify-center gap-6 list-none p-0">
+            <li><a href="https://hannesmolsen.de/impressum.html" class="hover:underline">Impressum</a></li>
+            <li><a href="https://hannesmolsen.de/datenschutz.html" class="hover:underline">Datenschutz</a></li>
+            <li><a href="https://hannesmolsen.de" class="hover:underline">Hannes Molsen</a></li>
+        </ul>
+    </footer>
+
+</body>
+</html>

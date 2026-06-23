@@ -35,6 +35,27 @@ select {
     background-color: #E7E6E6;
 }
 
+/* ── Back navigation ("All Tools" link) ─────────────────────── */
+
+.ss-nav {
+    margin-bottom: 1.5rem;
+}
+
+.ss-nav a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6B7280;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+.ss-nav a:hover {
+    color: #7B1717;
+}
+
 /* ── Page header ─────────────────────────────────────────────── */
 
 .ss-header {
