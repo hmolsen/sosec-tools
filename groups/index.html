@@ -15,99 +15,150 @@
             outline: 2px solid #17177B;
             outline-offset: -2px;
         }
-        /* Pencil icon fades in when hovering the card header */
         .card-hdr .edit-hint { opacity: 0; transition: opacity 0.15s; }
         .card-hdr:hover .edit-hint { opacity: 1; }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8">
 
-    <nav class="mb-6">
-        <a href="/" class="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[#7B1717] transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-            All Tools
-        </a>
-    </nav>
+    <!-- ══ EDIT WRAP — hidden in present mode ══════════════════════════════ -->
+    <div id="editWrap">
 
-    <header class="text-center mb-10">
-        <img src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" class="mx-auto h-20 mb-4 rounded-lg" />
-        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Group Assignment</h1>
-        <p class="text-xl text-gray-500">Randomly assign training participants into groups</p>
-    </header>
+        <nav class="mb-6">
+            <a href="/" class="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[#7B1717] transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+                All Tools
+            </a>
+        </nav>
 
-    <main class="max-w-6xl mx-auto space-y-6">
+        <header class="text-center mb-10">
+            <img src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" class="mx-auto h-20 mb-4 rounded-lg" />
+            <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Group Assignment</h1>
+            <p class="text-xl text-gray-500">Randomly assign training participants into groups</p>
+        </header>
 
-        <!-- Controls card -->
-        <div class="bg-white p-6 md:p-8 rounded-xl shadow-2xl">
-            <h2 class="text-2xl font-bold text-black mb-6 border-b pb-2">Setup</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <main class="max-w-6xl mx-auto space-y-6">
 
-                <!-- Participant names -->
-                <div class="md:col-span-2">
-                    <label for="participantInput" class="block text-sm font-medium text-gray-700 mb-1">
-                        Participants
-                        <span class="text-gray-400 font-normal">(one name per line)</span>
-                    </label>
-                    <textarea id="participantInput" rows="8"
-                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm resize-y font-mono text-sm bg-[#E7E6E6]"
-                        placeholder="Alice&#10;Bob&#10;Charlie&#10;Dave&#10;Eve&#10;Frank&#10;Grace&#10;Heidi"></textarea>
-                </div>
+            <!-- Controls card -->
+            <div class="bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+                <h2 class="text-2xl font-bold text-black mb-6 border-b pb-2">Setup</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
-                <!-- Group count + actions -->
-                <div class="flex flex-col gap-3">
-                    <div>
-                        <label for="groupCount" class="block text-sm font-medium text-gray-700 mb-1">Number of groups</label>
-                        <input type="number" id="groupCount" min="1" max="99" value="3"
-                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm bg-[#E7E6E6] text-center text-3xl font-bold">
+                    <div class="md:col-span-2">
+                        <label for="participantInput" class="block text-sm font-medium text-gray-700 mb-1">
+                            Participants
+                            <span class="text-gray-400 font-normal">(one name per line)</span>
+                        </label>
+                        <textarea id="participantInput" rows="8"
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm resize-y font-mono text-sm bg-[#E7E6E6]"
+                            placeholder="Alice&#10;Bob&#10;Charlie&#10;Dave&#10;Eve&#10;Frank&#10;Grace&#10;Heidi"></textarea>
                     </div>
-                    <button onclick="assignRandomly()"
-                        class="w-full px-4 py-3 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-[#7B1717] focus:ring-offset-2">
-                        Assign Randomly
-                    </button>
-                    <button onclick="resetAssignments()"
-                        class="w-full px-4 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:border-gray-400 hover:bg-gray-50 transition duration-150">
-                        Reset Assignments
-                    </button>
-                    <button onclick="confirmResetAll()"
-                        class="w-full px-4 py-3 border-2 border-[#7B1717] text-[#7B1717] font-semibold rounded-lg hover:bg-[#F8E6E6] transition duration-150">
-                        Reset Everything
-                    </button>
+
+                    <div class="flex flex-col gap-3">
+                        <div>
+                            <label for="groupCount" class="block text-sm font-medium text-gray-700 mb-1">Number of groups</label>
+                            <input type="number" id="groupCount" min="1" max="99" value="3"
+                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm bg-[#E7E6E6] text-center text-3xl font-bold">
+                        </div>
+                        <button onclick="assignRandomly()"
+                            class="w-full px-4 py-3 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-[#7B1717] focus:ring-offset-2">
+                            Assign Randomly
+                        </button>
+                        <button onclick="resetAssignments()"
+                            class="w-full px-4 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:border-gray-400 hover:bg-gray-50 transition duration-150">
+                            Reset Assignments
+                        </button>
+                        <button onclick="confirmResetAll()"
+                            class="w-full px-4 py-3 border-2 border-[#7B1717] text-[#7B1717] font-semibold rounded-lg hover:bg-[#F8E6E6] transition duration-150">
+                            Reset Everything
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Toast notification -->
-        <div id="toast" class="fixed top-6 right-6 z-50 hidden px-5 py-3 rounded-lg shadow-xl border text-sm font-medium max-w-xs pointer-events-none"></div>
+            <!-- Toast notification -->
+            <div id="toast" class="fixed top-6 right-6 z-40 hidden px-5 py-3 rounded-lg shadow-xl border text-sm font-medium max-w-xs pointer-events-none"></div>
 
-        <!-- Stats bar -->
-        <div id="statsBar" class="hidden bg-white px-6 py-3 rounded-xl shadow border border-gray-200 text-sm text-gray-600 flex flex-wrap items-center gap-x-5 gap-y-1"></div>
-
-        <!-- Unassigned pool -->
-        <div id="unassignedSection" class="hidden">
-            <div id="unassignedPool"
-                class="drop-zone bg-white rounded-xl shadow-lg border-2 border-dashed border-gray-300 p-5 transition-colors duration-150">
-                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Unassigned</p>
-                <div id="unassignedChips" class="flex flex-wrap gap-2 min-h-8"></div>
+            <!-- Stats bar (contains present button) -->
+            <div id="statsBar" class="hidden bg-white px-4 py-3 rounded-xl shadow border border-gray-200 flex items-center gap-4 flex-wrap">
+                <div id="statsText" class="text-sm text-gray-600 flex flex-wrap items-center gap-x-5 gap-y-1 flex-grow min-w-0"></div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="window.location.href='?view=present'"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-[#7B1717] text-white text-sm font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                        </svg>
+                        Present
+                    </button>
+                    <a href="?view=present" target="_blank"
+                        class="p-2 text-gray-400 hover:text-[#7B1717] rounded-lg hover:bg-[#F8E6E6] transition-colors"
+                        title="Open in new tab">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                        </svg>
+                    </a>
+                </div>
             </div>
+
+            <!-- Unassigned pool -->
+            <div id="unassignedSection" class="hidden">
+                <div id="unassignedPool"
+                    class="drop-zone bg-white rounded-xl shadow-lg border-2 border-dashed border-gray-300 p-5 transition-colors duration-150">
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Unassigned</p>
+                    <div id="unassignedChips" class="flex flex-wrap gap-2 min-h-8"></div>
+                </div>
+            </div>
+
+            <!-- Groups grid -->
+            <div id="groupsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+
+        </main>
+
+        <footer class="mt-12 py-6 text-center text-sm text-gray-500">
+            <p class="mb-2">&copy; 2026 Software Security</p>
+            <ul class="flex justify-center gap-6 list-none p-0">
+                <li><a href="https://hannesmolsen.de/impressum.html" class="hover:underline">Impressum</a></li>
+                <li><a href="https://hannesmolsen.de/datenschutz.html" class="hover:underline">Datenschutz</a></li>
+                <li><a href="https://hannesmolsen.de" class="hover:underline">Hannes Molsen</a></li>
+            </ul>
+        </footer>
+
+    </div><!-- /editWrap -->
+
+    <!-- ══ PRESENT WRAP — fixed overlay, shown via ?view=present ═══════════ -->
+    <div id="presentWrap" style="display:none; position:fixed; inset:0; z-index:50; flex-direction:column; background:#E7E6E6; overflow:auto; padding:1.5rem; gap:1rem; font-family:'Open Sans',sans-serif;">
+
+        <!-- Present header -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:1rem; border-bottom:1px solid rgba(0,0,0,0.1); flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:1rem;">
+                <img src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" style="height:2.5rem; border-radius:0.5rem;">
+                <div>
+                    <p style="color:#6B7280; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin:0;">Group Assignment</p>
+                    <p id="presentSubtitle" style="color:#374151; font-size:0.85rem; margin:0;"></p>
+                </div>
+            </div>
+            <a href="?"
+                style="display:inline-flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem; border:1px solid rgba(0,0,0,0.15); color:#374151; font-size:0.875rem; font-weight:500; border-radius:0.5rem; text-decoration:none; transition:background 0.15s;"
+                onmouseover="this.style.background='rgba(0,0,0,0.05)'; this.style.color='#111827';"
+                onmouseout="this.style.background='transparent'; this.style.color='#374151';">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 9l-6 6m0 0l6 6m-6-6h16" />
+                </svg>
+                Back to Setup
+            </a>
         </div>
 
-        <!-- Groups grid -->
-        <div id="groupsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+        <!-- Present grid (populated by renderPresent) -->
+        <div id="presentGrid" style="flex:1; display:grid; gap:1rem; align-content:stretch;"></div>
 
-    </main>
-
-    <footer class="mt-12 py-6 text-center text-sm text-gray-500">
-        <p class="mb-2">&copy; 2026 Software Security</p>
-        <ul class="flex justify-center gap-6 list-none p-0">
-            <li><a href="https://hannesmolsen.de/impressum.html" class="hover:underline">Impressum</a></li>
-            <li><a href="https://hannesmolsen.de/datenschutz.html" class="hover:underline">Datenschutz</a></li>
-            <li><a href="https://hannesmolsen.de" class="hover:underline">Hannes Molsen</a></li>
-        </ul>
-    </footer>
+    </div><!-- /presentWrap -->
 
     <script>
+        // ── URL mode detection ─────────────────────────────────────────────────
+        const PRESENT = new URLSearchParams(location.search).get('view') === 'present';
+
         // ── Word lists for random group names ──────────────────────────────────
         const ADJECTIVES = [
             'Flying', 'Cunning', 'Brave', 'Swift', 'Mighty', 'Fierce', 'Clever', 'Sneaky',
@@ -151,19 +202,24 @@
         const STORAGE_KEY = 'ss-group-tool';
 
         let state = {
-            participants: [],   // master list of all names
+            participants: [],
             numGroups:    3,
-            groups:       [],   // array of string arrays
-            unassigned:   [],   // names not yet in any group
-            groupNames:   [],   // display name for each group  ← new in v2
+            groups:       [],
+            unassigned:   [],
+            groupNames:   [],
         };
 
-        let drag = null; // { name: string, from: number }  -1 = unassigned pool
+        let drag = null;
 
         // ── DOM references ─────────────────────────────────────────────────────
+        const editWrap          = document.getElementById('editWrap');
+        const presentWrap       = document.getElementById('presentWrap');
+        const presentGrid       = document.getElementById('presentGrid');
+        const presentSubtitle   = document.getElementById('presentSubtitle');
         const participantInput  = document.getElementById('participantInput');
         const groupCountInput   = document.getElementById('groupCount');
         const statsBar          = document.getElementById('statsBar');
+        const statsText         = document.getElementById('statsText');
         const unassignedSection = document.getElementById('unassignedSection');
         const unassignedPool    = document.getElementById('unassignedPool');
         const unassignedChips   = document.getElementById('unassignedChips');
@@ -183,18 +239,15 @@
                 if (!parsed || !Array.isArray(parsed.participants)) return;
                 state = parsed;
 
-                // ── Migration: add groupNames if this is old data ──────────────
                 let migrated = false;
                 if (!Array.isArray(state.groupNames)) {
                     state.groupNames = generateGroupNames(state.groups.length);
                     migrated = true;
                 } else {
-                    // Fill any missing entries (e.g. groups were added externally)
                     while (state.groupNames.length < state.groups.length) {
                         state.groupNames.push(randomGroupName(state.groupNames));
                         migrated = true;
                     }
-                    // Trim excess entries
                     state.groupNames = state.groupNames.slice(0, state.groups.length);
                 }
                 if (migrated) save();
@@ -216,7 +269,7 @@
             toastEl._t = setTimeout(() => toastEl.classList.add('hidden'), 3500);
         }
 
-        // ── Render ─────────────────────────────────────────────────────────────
+        // ── Edit-mode render ───────────────────────────────────────────────────
         function render() {
             participantInput.value = state.participants.join('\n');
             groupCountInput.value  = state.numGroups;
@@ -225,24 +278,22 @@
             const nGroups     = state.groups.length;
             const nUnassigned = state.unassigned.length;
 
-            // Stats bar
             if (nGroups > 0) {
                 const avg = (total / nGroups).toFixed(1);
-                const unassignedClass = nUnassigned > 0 ? 'text-[#7B1717]' : 'text-black';
-                statsBar.innerHTML =
+                const uCls = nUnassigned > 0 ? 'text-[#7B1717]' : 'text-black';
+                statsText.innerHTML =
                     `<span><strong class="text-black">${total}</strong> participant${total !== 1 ? 's' : ''}</span>` +
                     `<span class="text-gray-300">·</span>` +
                     `<span><strong class="text-black">${nGroups}</strong> group${nGroups !== 1 ? 's' : ''}</span>` +
                     `<span class="text-gray-300">·</span>` +
                     `<span>~<strong class="text-black">${avg}</strong> per group</span>` +
                     `<span class="text-gray-300">·</span>` +
-                    `<span><strong class="${unassignedClass}">${nUnassigned}</strong> unassigned</span>`;
+                    `<span><strong class="${uCls}">${nUnassigned}</strong> unassigned</span>`;
                 statsBar.classList.remove('hidden');
             } else {
                 statsBar.classList.add('hidden');
             }
 
-            // Unassigned pool
             if (nGroups > 0) {
                 unassignedSection.classList.remove('hidden');
                 unassignedChips.innerHTML = '';
@@ -259,22 +310,102 @@
                 unassignedSection.classList.add('hidden');
             }
 
-            // Groups
             groupsGrid.innerHTML = '';
             state.groups.forEach((_, i) => groupsGrid.appendChild(makeGroupCard(i)));
         }
 
-        // ── Group card ─────────────────────────────────────────────────────────
+        // ── Present-mode render ────────────────────────────────────────────────
+        function presentCols(n) {
+            if (n <= 1) return 1;
+            if (n <= 3) return n;
+            if (n === 4) return 2;
+            if (n <= 6) return 3;
+            if (n <= 8) return 4;
+            if (n <= 9) return 3;
+            return 4;
+        }
+
+        function renderPresent() {
+            const n = state.groups.length;
+
+            if (n === 0) {
+                presentGrid.innerHTML = '<p style="color:rgba(255,255,255,0.4); font-size:1.25rem; margin:auto;">No groups assigned yet. Go back to Setup.</p>';
+                presentSubtitle.textContent = '';
+                return;
+            }
+
+            const total = state.participants.length;
+            presentSubtitle.textContent = `${total} participant${total !== 1 ? 's' : ''} · ${n} group${n !== 1 ? 's' : ''}`;
+
+            const cols = presentCols(n);
+            presentGrid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            presentGrid.style.gridAutoRows = '1fr';
+
+            // Adaptive name font size based on the largest group
+            const maxMembers = Math.max(...state.groups.map(g => g.length), 1);
+            const nameFontSize =
+                maxMembers <= 4  ? '1.25rem' :
+                maxMembers <= 8  ? '1.1rem'  :
+                maxMembers <= 14 ? '0.95rem' : '0.8rem';
+
+            presentGrid.innerHTML = '';
+            state.groups.forEach((members, i) => {
+                presentGrid.appendChild(makePresentCard(i, members, nameFontSize));
+            });
+        }
+
+        function makePresentCard(idx, members, nameFontSize) {
+            const card = document.createElement('div');
+            card.style.cssText = 'background:white; border-radius:1rem; overflow:hidden; box-shadow:0 25px 50px rgba(0,0,0,0.5); display:flex; flex-direction:column;';
+
+            // Red header
+            const hdr = document.createElement('div');
+            hdr.style.cssText = 'background:#7B1717; padding:1rem 1.5rem; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;';
+
+            const name = document.createElement('h2');
+            name.style.cssText = 'color:white; font-size:1.5rem; font-weight:800; margin:0; font-family:inherit; line-height:1.2;';
+            name.textContent = state.groupNames[idx];
+
+            const badge = document.createElement('span');
+            badge.style.cssText = 'background:rgba(255,255,255,0.2); color:white; font-size:0.8rem; padding:0.2rem 0.65rem; border-radius:9999px; flex-shrink:0;';
+            badge.textContent = members.length;
+
+            hdr.appendChild(name);
+            hdr.appendChild(badge);
+            card.appendChild(hdr);
+
+            // Participant list
+            const body = document.createElement('div');
+            body.style.cssText = 'padding:0.75rem 1.5rem; flex-grow:1; overflow:auto;';
+
+            if (members.length === 0) {
+                const empty = document.createElement('p');
+                empty.style.cssText = 'color:#9CA3AF; font-style:italic; padding:0.5rem 0;';
+                empty.textContent = 'No participants assigned';
+                body.appendChild(empty);
+            } else {
+                members.forEach((pName, i) => {
+                    const row = document.createElement('div');
+                    const isLast = i === members.length - 1;
+                    row.style.cssText = `padding:0.5rem 0; font-size:${nameFontSize}; color:#111827; font-family:inherit; ${isLast ? '' : 'border-bottom:1px solid #F3F4F6;'}`;
+                    row.textContent = pName;
+                    body.appendChild(row);
+                });
+            }
+
+            card.appendChild(body);
+            return card;
+        }
+
+        // ── Group card (edit mode) ─────────────────────────────────────────────
         function makeGroupCard(idx) {
             const card = document.createElement('div');
             card.className = 'drop-zone bg-white rounded-xl border border-gray-200 shadow-lg p-5 flex flex-col min-h-36 transition-colors duration-150';
             registerDropZone(card, idx);
 
-            // ── Header with editable name ──────────────────────────────────────
             const hdr = document.createElement('div');
             hdr.className = 'card-hdr flex items-center gap-2 mb-3 pb-2 border-b border-gray-200';
 
-            // Name input — looks like a heading, editable on click
             const nameInput = document.createElement('input');
             nameInput.type = 'text';
             nameInput.value = state.groupNames[idx];
@@ -293,10 +424,8 @@
                 if (e.key === 'Enter')  { e.preventDefault(); nameInput.blur(); }
                 if (e.key === 'Escape') { nameInput.value = state.groupNames[idx]; nameInput.blur(); }
             });
-            // Stop drag events from bubbling up to the card drop zone while typing
             nameInput.addEventListener('dragstart', e => e.stopPropagation());
 
-            // Pencil icon — visible on card-hdr hover via CSS
             const pencil = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             pencil.setAttribute('class', 'edit-hint shrink-0 w-3.5 h-3.5 text-gray-400');
             pencil.setAttribute('viewBox', '0 0 24 24');
@@ -310,7 +439,6 @@
             pPath.setAttribute('d', 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125');
             pencil.appendChild(pPath);
 
-            // Participant count badge
             const badge = document.createElement('span');
             badge.className = 'text-xs text-gray-500 bg-[#E7E6E6] px-2 py-0.5 rounded-full tabular-nums shrink-0';
             badge.textContent = state.groups[idx].length;
@@ -320,7 +448,6 @@
             hdr.appendChild(badge);
             card.appendChild(hdr);
 
-            // ── Chips area ─────────────────────────────────────────────────────
             const area = document.createElement('div');
             area.className = 'flex flex-wrap gap-2 flex-grow content-start';
 
@@ -343,7 +470,6 @@
             chip.className = 'chip flex items-center gap-1.5 px-3 py-1.5 bg-[#E7E6E6] border border-gray-300 rounded-full text-sm cursor-grab select-none hover:border-gray-400 hover:bg-gray-100 active:cursor-grabbing transition-colors';
             chip.draggable = true;
 
-            // 2×3 grip dots
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.setAttribute('width', '8');
             svg.setAttribute('height', '12');
@@ -422,7 +548,6 @@
             state.groups       = Array.from({ length: n }, () => []);
             state.groupNames   = generateGroupNames(n);
 
-            // Fisher-Yates shuffle then round-robin into groups
             const shuffled = [...unique];
             for (let i = shuffled.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -442,7 +567,6 @@
             }
             state.unassigned = [...state.participants];
             state.groups     = Array.from({ length: state.numGroups }, () => []);
-            // Keep existing group names; top up if numGroups grew
             while (state.groupNames.length < state.numGroups) {
                 state.groupNames.push(randomGroupName(state.groupNames));
             }
@@ -462,7 +586,18 @@
 
         // ── Boot ───────────────────────────────────────────────────────────────
         load();
-        render();
+
+        if (PRESENT) {
+            editWrap.style.display  = 'none';
+            document.body.style.padding = '0';
+            presentWrap.style.display = 'flex';
+            renderPresent();
+            window.addEventListener('storage', e => {
+                if (e.key === STORAGE_KEY) { load(); renderPresent(); }
+            });
+        } else {
+            render();
+        }
     </script>
 </body>
 </html>
