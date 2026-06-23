@@ -1,0 +1,31 @@
+<html>
+<body>
+<script>
+
+function ikvalid(e) {
+	var t = Array.from(e.substr(2, e.length))
+	  , n = t.pop()
+	  , i = 0;
+	return t.forEach((function(e, t) {
+		var n = (t % 2 == 1 ? 1 : 2) * parseInt(e);
+		i += n > 9 ? n - 9 : n
+	}
+	)),
+	i % 10 === parseInt(n)
+}
+
+let ik_start = "3001";
+let ik_random = Math.floor(Math.random() * (100000 - 10000) + 10000);
+
+let possible_ik = ik_start + ik_random;
+
+while (!ikvalid(possible_ik)) {
+	possible_ik = (parseInt(possible_ik) + 1).toString();
+}
+
+const actual_ik = possible_ik;
+
+document.write(actual_ik);
+</script>
+</body>
+</html>

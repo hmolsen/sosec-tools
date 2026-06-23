@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Security JWT Decoder & Encoder</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+	<!-- Load Open Sans font -->
+    <link rel="preload" href="https://hannesmolsen.de/fonts/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B4gaVI.woff2" as="font" type="font/woff2" crossorigin>
+    <style>
+        body {
+            /* Updated font family and background color */
+            font-family: 'Open Sans', sans-serif;
+            background-color: #E7E6E6; /* Light Gray/Off-White */
+            min-height: 100vh;
+        }
+        textarea, input, select {
+            font-family: monospace;
+            /* Ensure text is black for high contrast */
+            color: #000000;
+        }
+        /* New styling to make the editor areas flexible */
+        .json-edit-area {
+            min-height: 150px;
+        }
+        /* Style for buttons (Copy and Re-Decode) using Dark Red Theme */
+        .copy-button {
+            transition: background-color 0.15s, transform 0.1s;
+        }
+        .copy-button:hover {
+            /* Slightly darker red for hover state */
+            background-color: #631212; 
+        }
+        .copy-button:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <header class="text-center mb-10">
+        <!-- Placeholder for User Logo -->
+        <img id="userLogo" src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" class="mx-auto h-20 mb-4 rounded-lg" />
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">
+            JWT Decoder & Encoder
+        </h1>
+        <p class="text-xl text-gray-500">Generate, Decode and mess with JSON Web Tokens</p>
+    </header>
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Token Status/Re-Encoded Output (STAYS AT TOP, FULL WIDTH) -->
+        <div class="bg-white p-4 rounded-lg shadow-lg mb-6 border border-gray-200">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-lg font-semibold text-[#000000]">Re-Encoded JWT (Header.Payload.Signature)</h2>
+                <!-- Copy Button Updated to Dark Red #7B1717 -->
+                <button id="copyButton" class="copy-button px-4 py-2 text-sm font-medium text-white bg-[#7B1717] rounded-lg shadow-md">
+                    Copy
+                </button>
+            </div>
+            
+            <!-- Status message uses Dark Red #7B1717 for errors/warnings -->
+            <div id="statusMessage" class="text-sm text-[#7B1717] mb-2 font-medium"></div>
+            
+            <!-- Output background uses the E7E6E6 shade. Text color handled by JS. -->
+            <p id="reEncodedOutput" class="break-all font-mono text-sm bg-[#E7E6E6] p-3 rounded-md text-gray-600 border border-dashed"></p>
+        </div>
+
+        <!-- MAIN TWO-COLUMN GRID: Input on Left, Editable Parts on Right -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- LEFT COLUMN: Original Encoded JWT (Textarea) -->
+            <div class="bg-white p-4 rounded-lg shadow-lg border border-gray-200 flex flex-col min-h-[500px]">
+                <h2 class="text-lg font-semibold text-[#000000] mb-2">Original Encoded JWT</h2>
+                <!-- Changed to textarea and given flex-grow to fill height -->
+                <textarea id="encodedToken" placeholder="Paste your JWT here (e.g., header.payload.signature)"
+                    class="flex-grow w-full p-3 border border-gray-300 rounded-lg shadow-inner focus:ring-[#17177B] focus:border-[#17177B] resize-none text-base bg-[#E7E6E6] font-mono"></textarea>
+
+                <!-- NEW RE-DECODE BUTTON (Now Dark Red) -->
+                <button id="reDecodeButton" class="copy-button mt-4 px-4 py-3 text-sm font-bold text-white bg-[#7B1717] rounded-lg shadow-md">
+                    Re-Decode Token & Override Manual Changes
+                </button>
+            </div>
+
+            <!-- RIGHT COLUMN: Header, Payload, Signature (Stacked Vertically) -->
+            <div class="flex flex-col gap-4">
+                
+                <!-- 1. Header Section (Active Algorithm Bubble Removed) -->
+                <div class="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
+                    <h2 class="text-lg font-semibold text-[#000000] mb-2 flex items-center">
+                        Header
+                    </h2>
+                    
+                    <!-- Algorithm Selector -->
+                    <div class="mb-3">
+                        <label for="algorithm" class="block text-xs font-medium text-[#000000] mb-1">Select Algorithm for Signing</label>
+                        <select id="algorithm" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-[#17177B] focus:border-[#17177B] bg-[#E7E6E6] text-sm">
+                            <option value="HS256">HS256 (HMAC SHA-256)</option>
+                            <option value="RS256">RS256 (RSA SHA-256)</option>
+                            <option value="ES256">ES256 (ECDSA SHA-256)</option>
+                            <option value="none">none (Unsecured)</option>
+                        </select>
+                    </div>
+
+                    <!-- Textarea -->
+                    <textarea id="headerJson" class="json-edit-area w-full p-3 border border-gray-300 rounded-lg shadow-inner focus:ring-[#17177B] focus:border-[#17177B] resize-none text-sm bg-[#E7E6E6] font-mono" spellcheck="false"></textarea>
+                </div>
+
+                <!-- 2. Payload Section -->
+                <div class="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
+                    <h2 class="text-lg font-semibold text-[#000000] mb-2">Payload</h2>
+                    <textarea id="payloadJson" class="json-edit-area w-full p-3 border border-gray-300 rounded-lg shadow-inner focus:ring-[#17177B] focus:border-[#17177B] resize-none text-sm bg-[#E7E6E6] font-mono" spellcheck="false"></textarea>
+                </div>
+
+                <!-- 3. Signature Card (New structure) -->
+                <div class="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
+                    <h2 class="text-lg font-semibold text-[#000000] mb-4">Signature</h2>
+
+                    <!-- Secret Key Input -->
+                    <label for="secretKey" class="block text-sm font-medium text-[#000000] mb-1">Secret Key / Private Key (Used for Signing/Verification)</label>
+                    <input type="text" id="secretKey" placeholder="Enter secret key..."
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-[#17177B] focus:border-[#17177B] bg-[#E7E6E6] mb-4 font-mono">
+                    <p class="text-xs text-gray-500 mt-1 mb-4">Note: If a secret key is provided and the algorithm is HS256, the signature segment below will be automatically generated.</p>
+
+                    <!-- Signature Segment Input -->
+                    <label for="signatureSegment" class="block text-sm font-medium text-[#000000] mb-1">Signature Segment (Base64URL)</label>
+                    <input type="text" id="signatureSegment" placeholder="Signature part of the JWT"
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-[#17177B] focus:border-[#17177B] bg-[#E7E6E6] font-mono">
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <footer class="mt-12 py-6 text-center text-sm text-gray-500">
+        <p class="mb-2">&copy; 2026 Software Security</p>
+        <ul class="flex justify-center gap-6 list-none p-0">
+            <li><a href="https://hannesmolsen.de/impressum.html" class="hover:underline">Impressum</a></li>
+            <li><a href="https://hannesmolsen.de/datenschutz.html" class="hover:underline">Datenschutz</a></li>
+            <li><a href="https://hannesmolsen.de" class="hover:underline">Hannes Molsen</a></li>
+        </ul>
+    </footer>
+
+    <script>
+        const encodedTokenInput = document.getElementById('encodedToken');
+        const algorithmSelect = document.getElementById('algorithm');
+        const secretKeyInput = document.getElementById('secretKey');
+        const signatureSegmentInput = document.getElementById('signatureSegment');
+        const headerJsonTextarea = document.getElementById('headerJson');
+        const payloadJsonTextarea = document.getElementById('payloadJson');
+        // const headerAlgDisplay = document.getElementById('headerAlgDisplay'); // Removed
+        const reEncodedOutput = document.getElementById('reEncodedOutput');
+        const statusMessage = document.getElementById('statusMessage');
+        const copyButton = document.getElementById('copyButton');
+        const reDecodeButton = document.getElementById('reDecodeButton');
+
+        // Define custom colors for status states
+        const COLOR_ERROR = '#7B1717';     // Dark Red
+        const COLOR_SUCCESS = '#177B17';   // Dark Green
+        const COLOR_DEFAULT = '#17177B';   // Dark Blue
+
+        let isEditing = false; // Flag to prevent re-encoding loop
+
+        // --- Utility Functions ---
+
+        /**
+         * Converts a Base64URL string to a standard string.
+         */
+        const base64UrlDecode = (base64url) => {
+            let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+            while (base64.length % 4) {
+                base64 += '=';
+            }
+            try {
+                return decodeURIComponent(atob(base64).split('').map(function(c) {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join(''));
+            } catch (e) {
+                console.error("Base64 decoding failed:", e);
+                return '';
+            }
+        };
+
+        /**
+         * Converts a standard string to a Base64URL string.
+         */
+        const base64UrlEncode = (str) => {
+            const base64 = btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g,
+                function(match, p1) {
+                    return String.fromCharCode('0x' + p1);
+                }));
+
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        };
+
+        /**
+         * Converts ArrayBuffer to Base64URL string.
+         */
+        const arrayBufferToBase64Url = (buffer) => {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '');
+        };
+
+        /**
+         * Signs the token (Header.Payload) using HMAC SHA-256 and the provided key.
+         * @param {string} data The Header.Payload string.
+         * @param {string} secret The secret key.
+         * @returns {Promise<string>} The Base64URL-encoded signature.
+         */
+        const signTokenHS256 = async (data, secret) => {
+            try {
+                // Use TextEncoder to get a Buffer for the key and data
+                const encoder = new TextEncoder();
+                const keyData = encoder.encode(secret);
+                const dataToSign = encoder.encode(data);
+
+                // Import the key
+                const key = await crypto.subtle.importKey(
+                    'raw',
+                    keyData,
+                    { name: 'HMAC', hash: 'SHA-256' },
+                    false,
+                    ['sign']
+                );
+
+                // Sign the data
+                const signature = await crypto.subtle.sign(
+                    'HMAC',
+                    key,
+                    dataToSign
+                );
+
+                // Convert ArrayBuffer signature to Base64URL string
+                return arrayBufferToBase64Url(signature);
+
+            } catch (e) {
+                console.error("Signing failed:", e);
+                throw new Error("HS256 Signing failed. Check the key format/length.");
+            }
+        };
+
+        /**
+         * Copies the re-encoded JWT to the clipboard.
+         */
+        const copyToClipboard = () => {
+            const text = reEncodedOutput.textContent;
+            if (text && text.length > 0) {
+                // Use document.execCommand('copy') as navigator.clipboard.writeText()
+                // may not work in some sandbox environments (like iframes).
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    const originalText = copyButton.textContent;
+                    copyButton.textContent = 'Copied!';
+                    setTimeout(() => {
+                        copyButton.textContent = originalText;
+                    }, 2000);
+                } catch (err) {
+                    console.error('Failed to copy text: ', err);
+                    // Provide visual feedback for failure
+                    const originalText = copyButton.textContent;
+                    copyButton.textContent = 'Error!';
+                    setTimeout(() => {
+                        copyButton.textContent = originalText;
+                    }, 2000);
+                }
+            }
+        };
+
+
+        // --- Main Logic ---
+
+        /**
+         * Decodes a JWT token string into Header and Payload.
+         * @param {string} token The JWT string.
+         */
+        const decodeJwt = (token) => {
+            statusMessage.textContent = '';
+            const parts = token.split('.');
+
+            if (parts.length !== 3) {
+                if (token.trim() === '') {
+                    headerJsonTextarea.value = '';
+                    payloadJsonTextarea.value = '';
+                    signatureSegmentInput.value = ''; // Reset new signature field
+                    reEncodedOutput.textContent = '';
+                    algorithmSelect.value = 'HS256'; // Default algorithm
+                    statusMessage.textContent = '';
+                    return;
+                }
+                statusMessage.textContent = 'Invalid JWT format. Must have 3 segments (header.payload.signature).';
+                return;
+            }
+
+            const [b64Header, b64Payload, signature] = parts;
+            signatureSegmentInput.value = signature; // Populate the new signature field
+
+            try {
+                // Decode Header
+                const decodedHeaderStr = base64UrlDecode(b64Header);
+                const headerObj = JSON.parse(decodedHeaderStr);
+
+                // Decode Payload
+                const decodedPayloadStr = base64UrlDecode(b64Payload);
+                const payloadObj = JSON.parse(decodedPayloadStr);
+
+                isEditing = true;
+                headerJsonTextarea.value = JSON.stringify(headerObj, null, 2);
+                payloadJsonTextarea.value = JSON.stringify(payloadObj, null, 2);
+                isEditing = false;
+
+                // Update Algorithm Selector
+                const alg = headerObj.alg || 'HS256';
+                algorithmSelect.value = alg;
+                // headerAlgDisplay.textContent = alg; // Removed
+
+                // Trigger re-encode to show the current token parts
+                reEncodeJwt();
+
+            } catch (e) {
+                console.error("Decoding error:", e);
+                statusMessage.textContent = 'Failed to decode or parse JSON from token segments. Check console for details.';
+            }
+        };
+
+        /**
+         * Re-encodes Header and Payload into a JWT structure.
+         */
+        const reEncodeJwt = async () => {
+            if (isEditing) return;
+
+            statusMessage.textContent = '';
+            let newHeaderJson = headerJsonTextarea.value;
+            let newPayloadJson = payloadJsonTextarea.value;
+
+            // Function to reset color classes
+            const resetOutputColors = () => {
+                reEncodedOutput.style.color = COLOR_DEFAULT;
+                reEncodedOutput.style.border = `1px dashed ${COLOR_DEFAULT}`;
+            };
+            resetOutputColors();
+
+            try {
+                // 1. Parse and validate JSON
+                const headerObj = JSON.parse(newHeaderJson);
+                const payloadObj = JSON.parse(newPayloadJson);
+
+                // 2. Update 'alg' in header based on selector
+                const selectedAlg = algorithmSelect.value;
+                headerObj.alg = selectedAlg;
+                // headerAlgDisplay.textContent = selectedAlg; // Removed
+
+                // Re-stringigy the header to ensure 'alg' is updated
+                newHeaderJson = JSON.stringify(headerObj);
+
+                // 3. Base64URL Encode
+                const b64Header = base64UrlEncode(newHeaderJson);
+                const b64Payload = base64UrlEncode(JSON.stringify(payloadObj));
+                const dataToSign = `${b64Header}.${b64Payload}`;
+
+
+                // 4. Determine signature
+                let signaturePart = '';
+                const secretKey = secretKeyInput.value.trim();
+                const manualSignature = signatureSegmentInput.value.trim();
+
+                if (selectedAlg === 'none') {
+                    signaturePart = '';
+                    signatureSegmentInput.value = ''; // Clear signature input for 'none'
+                    statusMessage.textContent = 'Unsecured token (alg: none). Signature is empty.';
+                    reEncodedOutput.style.color = COLOR_SUCCESS;
+                    reEncodedOutput.style.border = `1px dashed ${COLOR_SUCCESS}`;
+
+                } else if (selectedAlg === 'HS256' && secretKey) {
+                    // GENERATE SIGNATURE
+                    statusMessage.textContent = 'Signing token using HS256 and provided secret key...';
+                    try {
+                        signaturePart = await signTokenHS256(dataToSign, secretKey);
+                        statusMessage.textContent = `Token successfully signed using ${selectedAlg} with the secret key.`;
+                        // Also update the signature input box with the generated signature
+                        signatureSegmentInput.value = signaturePart;
+                        reEncodedOutput.style.color = COLOR_DEFAULT;
+                        reEncodedOutput.style.border = `1px dashed ${COLOR_DEFAULT}`;
+                    } catch (e) {
+                        // Use manual signature if generation failed, but flag error
+                        signaturePart = manualSignature || 'signature_generation_failed';
+                        statusMessage.textContent = `Error during signing: ${e.message}`;
+                        reEncodedOutput.style.color = COLOR_ERROR;
+                        reEncodedOutput.style.border = `1px dashed ${COLOR_ERROR}`;
+                    }
+                } else {
+                    // USE MANUAL/EXISTING SIGNATURE for other algs or missing HS256 key
+                    signaturePart = manualSignature;
+
+                    if (selectedAlg === 'HS256') {
+                        statusMessage.textContent = 'Warning: HS256 selected, but no secret key provided. Using the signature segment below.';
+                    } else {
+                        statusMessage.textContent = `Warning: ${selectedAlg} selected. Asymmetric signing is not supported. Using the signature segment below.`;
+                    }
+                    reEncodedOutput.style.color = COLOR_ERROR;
+                    reEncodedOutput.style.border = `1px dashed ${COLOR_ERROR}`;
+                }
+
+                // 5. Construct the new JWT
+                const newJwt = `${dataToSign}.${signaturePart}`;
+                reEncodedOutput.textContent = newJwt;
+
+
+                // 6. Re-format the displayed JSON (for consistency)
+                isEditing = true;
+                headerJsonTextarea.value = JSON.stringify(headerObj, null, 2);
+                payloadJsonTextarea.value = JSON.stringify(payloadObj, null, 2);
+                isEditing = false;
+
+
+            } catch (e) {
+                statusMessage.textContent = 'Error: Invalid JSON structure in Header or Payload.';
+                reEncodedOutput.textContent = 'Error during re-encoding.';
+                reEncodedOutput.style.color = COLOR_ERROR;
+                reEncodedOutput.style.border = `1px dashed ${COLOR_ERROR}`;
+            }
+        };
+
+
+        // --- Event Listeners ---
+
+        // 1. Decode when the input token changes
+        encodedTokenInput.addEventListener('input', (e) => {
+            decodeJwt(e.target.value);
+        });
+
+        // 2. Re-encode when Header, Payload, Algorithm, or Key changes
+        headerJsonTextarea.addEventListener('input', () => {
+            isEditing = false;
+            reEncodeJwt();
+        });
+
+        payloadJsonTextarea.addEventListener('input', () => {
+            isEditing = false;
+            reEncodeJwt();
+        });
+
+        algorithmSelect.addEventListener('change', () => {
+            isEditing = false;
+            reEncodeJwt();
+        });
+
+        secretKeyInput.addEventListener('input', () => {
+            isEditing = false;
+            reEncodeJwt();
+        });
+
+        // 3. Re-encode when the Signature segment is manually edited
+        signatureSegmentInput.addEventListener('input', () => {
+            isEditing = false;
+            reEncodeJwt();
+        });
+
+        // 4. Copy button click handler
+        copyButton.addEventListener('click', copyToClipboard);
+
+        // 5. Re-Decode button click handler
+        reDecodeButton.addEventListener('click', () => {
+            decodeJwt(encodedTokenInput.value);
+        });
+
+        // 6. Initial setup with a demo token (example token is for HS256)
+        const demoToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkFsaWNlIENhbnZhcyIsImlhdCI6MTUxNjIzOTAyMn0.K_40oJ0z6BwJ110H2j-J7bK8h_8lG47k9e_T8lG47k9e_T';
+        encodedTokenInput.value = demoToken;
+        decodeJwt(demoToken);
+    </script>
+</body>
+</html>

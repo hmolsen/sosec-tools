@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>oose Trainingsübersicht</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 11.5px;
+    background: #eef1f6;
+    color: #222;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  header {
+    background: #1b3d6e;
+    color: #fff;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 14px; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  #status { font-size: 10.5px; color: #9bb8d8; margin-left: auto; white-space: nowrap; }
+
+  .toolbar {
+    background: #fff;
+    border-bottom: 1px solid #d0d7e2;
+    padding: 5px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .toolbar label { font-size: 11px; color: #555; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .toolbar input[type=text] {
+    padding: 3px 8px;
+    border: 1px solid #bcc6d4;
+    border-radius: 4px;
+    font-size: 11px;
+    width: 220px;
+    outline: none;
+  }
+  .toolbar input[type=text]:focus { border-color: #1b3d6e; }
+  #count { font-size: 10.5px; color: #888; margin-left: auto; }
+
+  .table-wrap {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  /* col 1 */ colgroup .c-start    { width: 72px; }
+  /* col 2 */ colgroup .c-end      { width: 72px; }
+  /* col 3 */ colgroup .c-title    { } /* fills remaining */
+  /* col 4 */ colgroup .c-short    { width: 115px; }
+  /* col 5 */ colgroup .c-trainer  { width: 165px; }
+  /* col 6 */ colgroup .c-lang     { width: 30px;  }
+  /* col 7 */ colgroup .c-tn       { width: 90px;  }
+  /* col 8 */ colgroup .c-location { width: 205px; }
+  /* col 9 */ colgroup .c-link     { width: 28px;  }
+
+  thead th {
+    background: #243f6a;
+    color: #d6e4f5;
+    padding: 4px 7px;
+    text-align: left;
+    cursor: pointer;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    font-size: 10.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    user-select: none;
+    border-right: 1px solid #1a3059;
+  }
+  thead th:last-child { border-right: none; }
+  thead th:hover { background: #2e5291; color: #fff; }
+  thead th.th-lang { text-align: center; padding: 4px 2px; }
+  thead th.asc  { color: #ffd54f; }
+  thead th.desc { color: #ffd54f; }
+  thead th.asc::after  { content: ' ↑'; }
+  thead th.desc::after { content: ' ↓'; }
+
+  tbody tr {
+    border-bottom: 1px solid #e4e9f0;
+    transition: background .08s;
+  }
+  tbody tr:nth-child(even) { background: #f7f9fc; }
+  tbody tr:nth-child(odd)  { background: #fff; }
+  tbody tr:hover           { background: #dce8f8 !important; }
+
+  tbody tr.hannes       { background: #fff8e1 !important; border-left: 3px solid #f4a700; }
+  tbody tr.hannes:hover { background: #ffeeb3 !important; }
+  tbody tr.hannes td:first-child { padding-left: 4px; }
+
+  tbody tr.past             { opacity: .55; }
+  tbody tr.past td          { color: #777; }
+  tbody tr.past.hannes      { opacity: .7; }
+
+  td {
+    padding: 2px 7px;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    height: 22px;
+    line-height: 22px;
+    border-right: 1px solid #eaecf0;
+  }
+  td:last-child { border-right: none; }
+
+  .fi { font-size: 14px; display: block; line-height: 1; }
+
+  .tn-cell  { display: flex; align-items: center; gap: 5px; height: 100%; }
+  .tn-text  { width: 38px; flex-shrink: 0; font-size: 10.5px; }
+  .bar-bg   { flex: 1; height: 5px; background: #dde3ec; border-radius: 3px; overflow: hidden; }
+  .bar-fg   { height: 100%; border-radius: 3px; }
+  .bar-low    { background: #4caf50; }
+  .bar-medium { background: #ff9800; }
+  .bar-full   { background: #e53935; }
+
+  .loc-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 9px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 15px;
+    vertical-align: middle;
+  }
+  .loc-online   { background: #e3f2fd; color: #1565c0; }
+  .loc-inperson { background: #f3e5f5; color: #6a1b9a; }
+  .loc-other    { background: #e8f5e9; color: #2e7d32; }
+
+  .dim { color: #bbb; }
+
+  a.ext-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin: auto;
+    border-radius: 3px;
+    color: #1b3d6e;
+    text-decoration: none;
+    font-size: 13px;
+    line-height: 1;
+    opacity: .7;
+    transition: opacity .1s;
+  }
+  a.ext-link:hover { opacity: 1; background: #dce8f8; }
+
+  #error-msg {
+    display: none;
+    padding: 20px;
+    text-align: center;
+    color: #c62828;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>oose Trainingsübersicht</h1>
+  <span id="status">Lade…</span>
+</header>
+
+<div class="toolbar">
+  <input type="text" id="filter" placeholder="Suche: Titel, Kürzel, Trainer, Ort…" oninput="render()">
+  <label><input type="checkbox" id="chkFuture" checked onchange="render()"> Nur zukünftige</label>
+  <label><input type="checkbox" id="chkHannes" checked onchange="render()"> Nur Hannes Molsen</label>
+  <span id="count"></span>
+</div>
+
+<div class="table-wrap">
+  <table id="tbl">
+    <colgroup>
+      <col class="c-start">
+      <col class="c-end">
+      <col class="c-title">
+      <col class="c-short">
+      <col class="c-trainer">
+      <col class="c-lang">
+      <col class="c-tn">
+      <col class="c-location">
+      <col class="c-link">
+    </colgroup>
+    <thead>
+      <tr>
+        <th data-key="start"                            onclick="setSort(this)">Start</th>
+        <th data-key="end"                              onclick="setSort(this)">Ende</th>
+        <th data-key="title"                            onclick="setSort(this)">Titel</th>
+        <th data-key="courseShortCode"                  onclick="setSort(this)">Kürzel</th>
+        <th data-key="trainer"                          onclick="setSort(this)">Trainer</th>
+        <th class="th-lang" data-key="lang"             onclick="setSort(this)" title="Sprache">🌐</th>
+        <th data-key="numberOfParticipants"             onclick="setSort(this)" title="Teilnehmer / Max">TN / Max</th>
+        <th data-key="location"                         onclick="setSort(this)">Ort</th>
+        <th style="cursor:default;text-align:center" title="Link zur Kursseite">↗</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="9" style="text-align:center;padding:20px;color:#999">Lade Daten…</td></tr>
+    </tbody>
+  </table>
+  <div id="error-msg"></div>
+</div>
+
+<script>
+const API_EVENTS = 'https://course-api.oose.de/v1/events';
+
+/* ── static course data (scraped from oose.de) ───── */
+const COURSE_DATA = {
+  "ACHT":                  { title: "Achtsamkeit für Wissensarbeiter:innen",                                                                               url: "https://www.oose.de/seminar/achtsamkeit-fur-wissensarbeiterinnen" },
+  "ADOK":                  { title: "Praktische Architektur-Dokumentation (ADOC)",                                                                         url: "https://www.oose.de/seminar/praktische-architektur-dokumentation-adoc" },
+  "AGILA":                 { title: "Agile Softwarearchitektur (AGILA)",                                                                                   url: "https://www.oose.de/seminar/agile-softwarearchitektur-agila" },
+  "AI4MBSE":               { title: "Workshop: AI-Assisted MBSE mit SysML v2",                                                                             url: "https://www.oose.de/seminar/workshop-ai-assisted-mbse-mit-sysml-v2" },
+  "AIRE":                  { title: "Requirements Engineering mit KI",                                                                                     url: "https://www.oose.de/seminar/requirements-engineering-mit-ki" },
+  "AMM":                   { title: "Agile Moderationsmethoden - analog und digital",                                                                      url: "https://www.oose.de/seminar/agile-moderationsmethoden-analog-und-digital" },
+  "APM":                   { title: "Agiles IT-Projektmanagement",                                                                                         url: "https://www.oose.de/seminar/agiles-it-projektmanagement" },
+  "APUC20":                { title: "Agiles Planen und Analysieren mit Use Case 2.0 und UML",                                                              url: "https://www.oose.de/seminar/agiles-planen-und-analysieren-mit-use-case-20-und-uml" },
+  "ARE":                   { title: "Agiles Requirements Engineering",                                                                                     url: "https://www.oose.de/seminar/agiles-requirements-engineering" },
+  "ATeam":                 { title: "Agilität trifft auf systemische Teamentwicklung",                                                                     url: "https://www.oose.de/seminar/agilitat-trifft-auf-systemische-teamentwicklung" },
+  "ATeam Modul 1":         { title: "Agilität trifft auf systemische Teamentwicklung",                                                                     url: "https://www.oose.de/seminar/agilitat-trifft-auf-systemische-teamentwicklung" },
+  "ATeam Modul 2":         { title: "Agilität trifft auf systemische Teamentwicklung",                                                                     url: "https://www.oose.de/seminar/agilitat-trifft-auf-systemische-teamentwicklung" },
+  "ATeam Modul 3":         { title: "Agilität trifft auf systemische Teamentwicklung",                                                                     url: "https://www.oose.de/seminar/agilitat-trifft-auf-systemische-teamentwicklung" },
+  "AWERT":                 { title: "Software-Architekturbewertung (ARCEVAL)",                                                                             url: "https://www.oose.de/seminar/software-architekturbewertung-arceval" },
+  "BBST":                  { title: "BBST® Foundations",                                                                                                   url: "https://www.oose.de/seminar/bbst-foundations" },
+  "BBST Gruppentag 1":     { title: "BBST® Foundations",                                                                                                   url: "https://www.oose.de/seminar/bbst-foundations" },
+  "BBST Gruppentag 2":     { title: "BBST® Foundations",                                                                                                   url: "https://www.oose.de/seminar/bbst-foundations" },
+  "BBST Kick Off":         { title: "BBST® Foundations",                                                                                                   url: "https://www.oose.de/seminar/bbst-foundations" },
+  "BDD":                   { title: "Behaviour Driven Development - Kommunikation mittels Beispielen und Szenarien",                                        url: "https://www.oose.de/seminar/behaviour-driven-development-kommunikation-mittels-beispielen-und-szenarien" },
+  "BDDC":                  { title: "Behaviour Driven Development mit Cucumber inkl. Zertifizierung",                                                      url: "https://www.oose.de/seminar/behaviour-driven-development-mit-cucumber-inkl-zertifizierung" },
+  "BPMN":                  { title: "Geschäftsprozesse mit BPMN 2.0 verständlich modellieren",                                                             url: "https://www.oose.de/seminar/geschaftsprozesse-mit-bpmn-20-verstandlich-modellieren" },
+  "BPMN+OCEB2-F":          { title: "Geschäftsprozesse mit BPMN 2.0 verständlich modellieren inkl. Zertifizierung OCEB2-F",                                url: "https://www.oose.de/seminar/geschaftsprozesse-mit-bpmn-20-verstandlich-modellieren-inkl-zertifizierung-oceb2-f" },
+  "CK":                    { title: "Coachingskills für Agile Coaches",                                                                                    url: "https://www.oose.de/seminar/coachingskills-fur-agile-coaches" },
+  "CLOUD-Sec":             { title: "Cloud Security",                                                                                                      url: "https://www.oose.de/seminar/cloud-security" },
+  "CLOUDINFRA":            { title: "Infrastruktur, Container & Cloud-Native (CLOUDINFRA)",                                                                url: "https://www.oose.de/seminar/infrastruktur-container-cloud-native-cloudinfra" },
+  "CPIoT":                 { title: "ASQF® Certified Professional for IoT",                                                                                url: "https://www.oose.de/seminar/asqf-certified-professional-for-iot" },
+  "CPRE-ALE":              { title: "IREB Certified Professional Requirements Engineering – Advanced Level Elicitation",                                    url: "https://www.oose.de/seminar/ireb-certified-professional-requirements-engineering-advanced-level-elicitation" },
+  "CPRE-FL":               { title: "IREB Certified Professional for Requirements Engineering – Foundation Level",                                         url: "https://www.oose.de/seminar/ireb-certified-professional-for-requirements-engineering-foundation-level" },
+  "CPRE-FL-4":             { title: "IREB CPRE-FL in 4 Vormittagen",                                                                                      url: "https://www.oose.de/seminar/ireb-cpre-fl-in-4-vormittagen" },
+  "CRAFT":                 { title: "Software Craftsmanship und Clean Code",                                                                               url: "https://www.oose.de/seminar/software-craftsmanship-und-clean-code" },
+  "CSE-B":                 { title: "Vorbereitungskurs Certified Systems Engineer Ebene B",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-b" },
+  "CSE-B Block A":         { title: "Vorbereitungskurs Certified Systems Engineer Ebene B",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-b" },
+  "CSE-B Block B":         { title: "Vorbereitungskurs Certified Systems Engineer Ebene B",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-b" },
+  "CSE-B Block C":         { title: "Vorbereitungskurs Certified Systems Engineer Ebene B",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-b" },
+  "CSE-B Block D":         { title: "Vorbereitungskurs Certified Systems Engineer Ebene B",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-b" },
+  "CSE-C":                 { title: "Vorbereitungskurs Certified Systems Engineer Ebene C",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-c" },
+  "CSE-C Block A":         { title: "Vorbereitungskurs Certified Systems Engineer Ebene C",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-c" },
+  "CSE-C Block B":         { title: "Vorbereitungskurs Certified Systems Engineer Ebene C",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-c" },
+  "CSE-C Block C":         { title: "Vorbereitungskurs Certified Systems Engineer Ebene C",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-c" },
+  "CSE-C Block D":         { title: "Vorbereitungskurs Certified Systems Engineer Ebene C",                                                                url: "https://www.oose.de/seminar/vorbereitungskurs-certified-systems-engineer-ebene-c" },
+  "CSM":                   { title: "Agiles IT-Projektmanagement",                                                                                         url: "https://www.oose.de/seminar/agiles-it-projektmanagement" },
+  "CSPO":                  { title: "Agiles IT-Projektmanagement",                                                                                         url: "https://www.oose.de/seminar/agiles-it-projektmanagement" },
+  "CSPOP":                 { title: "Agiles IT-Projektmanagement",                                                                                         url: "https://www.oose.de/seminar/agiles-it-projektmanagement" },
+  "CT-AI":                 { title: "ISTQB® Certified Tester - AI Testing inkl. Zertifizierung (CT-AI)",                                                   url: "https://www.oose.de/seminar/istqb-certified-tester-ai-testing-inkl-zertifizierung-ct-ai" },
+  "CTAL-TAE":              { title: "ISTQB® Certified Tester Advanced Level – Test Automation Engineering inkl. online Zertifizierung (CTAL-TAE v2.0)",    url: "https://www.oose.de/seminar/istqb-certified-tester-advanced-level-test-automation-engineering-inkl-online-zertifizierung-ctal-tae-v20" },
+  "CTAL-TM":               { title: "ISTQB® Certified Tester Advanced Level – Test Management inkl. Zertifizierung (CTAL-TM v3.0)",                        url: "https://www.oose.de/seminar/istqb-certified-tester-advanced-level-test-management-inkl-zertifizierung-ctal-tm-v30" },
+  "CTFL":                  { title: "ISTQB® Certified Tester Foundation Level inkl. Zertifizierung (CTFL)",                                                url: "https://www.oose.de/seminar/istqb-certified-tester-foundation-level-inkl-zertifizierung-ctfl" },
+  "CTFL-AT":               { title: "ISTQB® Certified Tester Foundation Level – Agile Tester inkl. online Zertifizierung (CT-AT)",                         url: "https://www.oose.de/seminar/istqb-certified-tester-foundation-level-agile-tester-inkl-online-zertifizierung-ct-at" },
+  "CTFL-K":                { title: "ISTQB® CTFL Kompakt inkl. Online-Zertifizierung",                                                                     url: "https://www.oose.de/seminar/istqb-ctfl-kompakt-inkl-online-zertifizierung" },
+  "DDD":                   { title: "Domain-driven Design (DDD)",                                                                                          url: "https://www.oose.de/seminar/domain-driven-design-ddd" },
+  "DDP-FL":                { title: "Digital Design Professional - Foundation Level inkl. Zertifizierung (DDP-FL)",                                        url: "https://www.oose.de/seminar/digital-design-professional-foundation-level-inkl-zertifizierung-ddp-fl" },
+  "DMN":                   { title: "Entscheidungen automatisieren mit DMN",                                                                               url: "https://www.oose.de/seminar/entscheidungen-automatisieren-mit-dmn" },
+  "DSL":                   { title: "Domänenspezifische Sprachen (DSL)",                                                                                   url: "https://www.oose.de/seminar/domanenspezifische-sprachen-dsl" },
+  "DTE":                   { title: "Design Thinking erleben und begreifen",                                                                               url: "https://www.oose.de/seminar/design-thinking-erleben-und-begreifen" },
+  "DTF":                   { title: "Design Thinking Facilitator",                                                                                         url: "https://www.oose.de/seminar/design-thinking-facilitator" },
+  "DataKI":                { title: "Datenkompetenz und KI-Grundlagen für souveräne Entscheidungen",                                                       url: "https://www.oose.de/seminar/datenkompetenz-und-ki-grundlagen-fur-souverane-entscheidungen" },
+  "DevKon":                { title: "Konfliktmanagement für Entwickler:innen",                                                                             url: "https://www.oose.de/seminar/konfliktmanagement-fur-entwicklerinnen" },
+  "Docker-WS":             { title: "Docker",                                                                                                              url: "https://www.oose.de/seminar/docker" },
+  "EAM-A":                 { title: "Pragmatisches Enterprise Architecture Management (EAM)",                                                              url: "https://www.oose.de/seminar/pragmatisches-enterprise-architecture-management-eam" },
+  "EML":                   { title: "Einführung in Machine Learning",                                                                                      url: "https://www.oose.de/seminar/einfuhrung-in-machine-learning" },
+  "FIT4KI":                { title: "Fit für Künstliche Intelligenz",                                                                                      url: "https://www.oose.de/seminar/fit-fur-kunstliche-intelligenz" },
+  "FLEX":                  { title: "Flexible Architekturmodelle (FLEX)",                                                                                  url: "https://www.oose.de/seminar/flexible-architekturmodelle-flex" },
+  "FM":                    { title: "Formale Methoden (FM)",                                                                                               url: "https://www.oose.de/seminar/formale-methoden-fm" },
+  "FSB":                   { title: "Future Skills: Kompetenzen für die Zukunft",                                                                          url: "https://www.oose.de/seminar/future-skills-kompetenzen-fur-die-zukunft" },
+  "FUNAR":                 { title: "Funktionale Softwarearchitektur (FUNAR)",                                                                             url: "https://www.oose.de/seminar/funktionale-softwarearchitektur-funar" },
+  "GET":                   { title: "Gemeinsam entscheiden im Team",                                                                                       url: "https://www.oose.de/seminar/gemeinsam-entscheiden-im-team" },
+  "GKI-SEC":               { title: "Grundlagen der KI-Sicherheit",                                                                                       url: "https://www.oose.de/seminar/grundlagen-der-ki-sicherheit" },
+  "Git":                   { title: "Git verstehen",                                                                                                       url: "https://www.oose.de/seminar/git-verstehen" },
+  "KON-A":                 { title: "Konfliktmanagement und konstruktive Konfliktlösungen",                                                                url: "https://www.oose.de/seminar/konfliktmanagement-und-konstruktive-konfliktlosungen" },
+  "KUW":                   { title: "Konstruktiver Umgang mit Widerständen bei Veränderungsprozessen",                                                     url: "https://www.oose.de/seminar/konstruktiver-umgang-mit-widerstanden-bei-veranderungsprozessen" },
+  "KoMo":                  { title: "Kommunikation & Moderationstechniken in der IT – mit vielen Remote Tools",                                            url: "https://www.oose.de/seminar/kommunikation-moderationstechniken-in-der-it-mit-vielen-remote-tools" },
+  "Kombi-1":               { title: "Kommunikation, Moderation und Grundlagen Konfliktmanagement",                                                         url: "https://www.oose.de/seminar/kommunikation-moderation-und-grundlagen-konfliktmanagement" },
+  "LSP":                   { title: "LEGO® Serious Play® Methode",                                                                                        url: "https://www.oose.de/seminar/lego-serious-play-methode" },
+  "MBFS":                  { title: "Model-Based Functional Safety",                                                                                       url: "https://www.oose.de/seminar/model-based-functional-safety" },
+  "MBSE":                  { title: "Modellbasiertes Systems Engineering mit SysML v1",                                                                    url: "https://www.oose.de/seminar/modellbasiertes-systems-engineering-mit-sysml-v1" },
+  "MBSE+FAS":              { title: "Modellbasiertes Systems Engineering mit SysMLv1 inkl. Funktionale Architekturen für Systeme (FAS)",                    url: "https://www.oose.de/seminar/modellbasiertes-systems-engineering-mit-sysmlv1-inkl-funktionale-architekturen-fur-systeme-fas" },
+  "MBSE+ZERT":             { title: "Modellbasiertes Systems Engineering mit SysML v1 inklusive Vorbereitung und Prüfung OCSMP-Model-User",                 url: "https://www.oose.de/seminar/modellbasiertes-systems-engineering-mit-sysml-v1-inklusive-vorbereitung-und-prufung-ocsmp-model-user" },
+  "MBSE2":                 { title: "Modellbasiertes Systems Engineering mit der SysML v2",                                                                url: "https://www.oose.de/seminar/modellbasiertes-systems-engineering-mit-der-sysml-v2" },
+  "MBSE2+ZERT":            { title: "Modellbasiertes Systems Engineering mit SysML v2 inkl. SysML2-MU-Zertifizierung",                                     url: "https://www.oose.de/seminar/modellbasiertes-systems-engineering-mit-sysml-v2-inkl-sysml2-mu-zertifizierung" },
+  "OCEB2-BI":              { title: "OMG Certified Expert in BPM 2 (Business Intermediate)",                                                               url: "https://www.oose.de/seminar/omg-certified-expert-in-bpm-2-business-intermediate" },
+  "OCSMP-MU":              { title: "OMG Certified Systems Modeling Professional - Model User",                                                            url: "https://www.oose.de/seminar/omg-certified-systems-modeling-professional-model-user" },
+  "PE":                    { title: "Prompt Engineering für Einsteiger:innen",                                                                             url: "https://www.oose.de/seminar/prompt-engineering-fur-einsteigerinnen" },
+  "PE-E":                  { title: "Prompt Engineering für Entwickler:innen",                                                                             url: "https://www.oose.de/seminar/prompt-engineering-fur-entwicklerinnen" },
+  "PKI":                   { title: "Prozessmodelle mit KI entwickeln",                                                                                    url: "https://www.oose.de/seminar/prozessmodelle-mit-ki-entwickeln" },
+  "PMP-Z":                 { title: "PMP® - Prüfungsvorbereitung nach PMI®",                                                                               url: "https://www.oose.de/seminar/pmp-prufungsvorbereitung-nach-pmi" },
+  "POKON":                 { title: "Konstruktive Konfliktlösung: Ein Seminar für Product Owner",                                                          url: "https://www.oose.de/seminar/konstruktive-konfliktlosung-ein-seminar-fur-product-owner" },
+  "POT":                   { title: "Product Owner Training: Schlüsselkompetenzen und Sicherheit",                                                         url: "https://www.oose.de/seminar/product-owner-training-schlusselkompetenzen-und-sicherheit" },
+  "ProP":                  { title: "Professionell Präsentieren",                                                                                          url: "https://www.oose.de/seminar/professionell-prasentieren" },
+  "QEV":                   { title: "Der Quality Evangelist",                                                                                              url: "https://www.oose.de/seminar/der-quality-evangelist" },
+  "REACT2":                { title: "Webanwendungen mit React - Fortgeschrittene Konzepte",                                                                url: "https://www.oose.de/seminar/webanwendungen-mit-react-fortgeschrittene-konzepte" },
+  "REM+Zert":              { title: "IREB Certified Professional for Requirements Engineering plus Praxis",                                                 url: "https://www.oose.de/seminar/ireb-certified-professional-for-requirements-engineering-plus-praxis" },
+  "RPL":                   { title: "Von Stress zu Stärke: Resilienz praktisch lernen",                                                                    url: "https://www.oose.de/seminar/von-stress-zu-starke-resilienz-praktisch-lernen" },
+  "SBIS":                  { title: "A4Q Certified Digital Accessibility Tester inkl. Zertifizierung",                                                     url: "https://www.oose.de/seminar/a4q-certified-digital-accessibility-tester-inkl-zertifizierung" },
+  "SEC-REFRESH":           { title: "Auffrischung Sicherheit für webbasierte Systeme",                                                                     url: "https://www.oose.de/seminar/auffrischung-sicherheit-fur-webbasierte-systeme" },
+  "SEG":                   { title: "Systems Engineering Grundlagen",                                                                                      url: "https://www.oose.de/seminar/systems-engineering-grundlagen" },
+  "SEGP":                  { title: "Systems Engineering Grundlagen in der Praxis",                                                                        url: "https://www.oose.de/seminar/systems-engineering-grundlagen-in-der-praxis" },
+  "SMT":                   { title: "Scrum Master Training: Grundlagenwissen für den Alltag",                                                              url: "https://www.oose.de/seminar/scrum-master-training-grundlagenwissen-fur-den-alltag" },
+  "SPO":                   { title: "Souverän als Product Owner",                                                                                          url: "https://www.oose.de/seminar/souveran-als-product-owner" },
+  "SWA+Plus":              { title: "Intensivkurs Softwarearchitektur inkl. iSAQB-CPSA-F Zertifizierung",                                                  url: "https://www.oose.de/seminar/intensivkurs-softwarearchitektur-inkl-isaqb-cpsa-f-zertifizierung" },
+  "SWA+Plus Modul 1":      { title: "Intensivkurs Softwarearchitektur inkl. iSAQB-CPSA-F Zertifizierung",                                                  url: "https://www.oose.de/seminar/intensivkurs-softwarearchitektur-inkl-isaqb-cpsa-f-zertifizierung" },
+  "SWA+Plus Modul 2":      { title: "Intensivkurs Softwarearchitektur inkl. iSAQB-CPSA-F Zertifizierung",                                                  url: "https://www.oose.de/seminar/intensivkurs-softwarearchitektur-inkl-isaqb-cpsa-f-zertifizierung" },
+  "SWA+Zert":              { title: "Lebendige Softwarearchitektur mit Methode inkl. iSAQB-CPSA-F Zertifizierung",                                         url: "https://www.oose.de/seminar/lebendige-softwarearchitektur-mit-methode-inkl-isaqb-cpsa-f-zertifizierung" },
+  "SWA-E":                 { title: "Softwarearchitektur für Entwickler:innen",                                                                            url: "https://www.oose.de/seminar/softwarearchitektur-fur-entwicklerinnen" },
+  "SWA-GET":               { title: "Softwarearchitekturentscheidungen auf Augenhöhe treffen",                                                             url: "https://www.oose.de/seminar/softwarearchitekturentscheidungen-auf-augenhohe-treffen" },
+  "SWA-Sec":               { title: "Sichere Architekturen",                                                                                               url: "https://www.oose.de/seminar/sichere-architekturen" },
+  "SWA-web":               { title: "Softwarearchitektur für Webanwendungen (WEB)",                                                                        url: "https://www.oose.de/seminar/softwarearchitektur-fur-webanwendungen-web" },
+  "SYSML2-MU":             { title: "SysML v2 Model User Zertifizierungsvorbereitung",                                                                     url: "https://www.oose.de/seminar/sysml-v2-model-user-zertifizierungsvorbereitung" },
+  "SiA":                   { title: "Selbstmanagement: Sicher handeln in Komplexität",                                                                     url: "https://www.oose.de/seminar/selbstmanagement-sicher-handeln-in-komplexitat" },
+  "SofA":                  { title: "Soft Skills für Architekt:innen (SOFT)",                                                                              url: "https://www.oose.de/seminar/soft-skills-fur-architektinnen-soft" },
+  "Spring-AI":             { title: "Spring AI",                                                                                                           url: "https://www.oose.de/seminar/spring-ai" },
+  "Spring-Boot":           { title: "Spring Boot",                                                                                                         url: "https://www.oose.de/seminar/spring-boot" },
+  "SysKon":                { title: "Konfliktmanagement für Systems Engineers",                                                                            url: "https://www.oose.de/seminar/konfliktmanagement-fur-systems-engineers" },
+  "SysML Light":           { title: "Modellbasiertes Systems Engineering mit SysML v2 inkl. SysML2-MU-Zertifizierung",                                     url: "https://www.oose.de/seminar/modellbasiertes-systems-engineering-mit-sysml-v2-inkl-sysml2-mu-zertifizierung" },
+  "SysML2":                { title: "SysML v2 für Umsteiger",                                                                                              url: "https://www.oose.de/seminar/sysml-v2-fur-umsteiger" },
+  "SysML2-ENGL(EU)":       { title: "SysML v2 Kickstarter (EU timezone)",                                                                                  url: "https://www.oose.com/seminar/sysml-v2-kickstarter-eu-timezone" },
+  "SysML2-ENGL(US)":       { title: "SysML v2 Kickstarter (EU timezone)",                                                                                  url: "https://www.oose.com/seminar/sysml-v2-kickstarter-eu-timezone" },
+  "TAAJ":                  { title: "Testautomatisierung mit JUnit und AssertJ",                                                                           url: "https://www.oose.de/seminar/testautomatisierung-mit-junit-und-assertj" },
+  "TAIP":                  { title: "Testautomatisierung in der Praxis",                                                                                   url: "https://www.oose.de/seminar/testautomatisierung-in-der-praxis" },
+  "TAIP-KI":               { title: "KI-Gestützte Testautomatisierung in der Praxis",                                                                      url: "https://www.oose.de/seminar/ki-gestutzte-testautomatisierung-in-der-praxis" },
+  "TDD":                   { title: "Testgetriebene Softwareentwicklung",                                                                                  url: "https://www.oose.de/seminar/testgetriebene-softwareentwicklung" },
+  "TFA":                   { title: "Agil führen",                                                                                                         url: "https://www.oose.de/seminar/agil-fuhren" },
+  "TGIP":                  { title: "Testgrundlagen in der Praxis",                                                                                        url: "https://www.oose.de/seminar/testgrundlagen-in-der-praxis" },
+  "TMP":                   { title: "Testautomatisierung mit Playwright",                                                                                  url: "https://www.oose.de/seminar/testautomatisierung-mit-playwright" },
+  "TMS":                   { title: "Testautomatisierung mit Selenium",                                                                                    url: "https://www.oose.de/seminar/testautomatisierung-mit-selenium" },
+  "ToBa":                  { title: "Testautomatisierung mit Tricentis Tosca Basiswissen",                                                                 url: "https://www.oose.de/seminar/testautomatisierung-mit-tricentis-tosca-basiswissen" },
+  "UUX":                   { title: "Usability und User Experience gestalten (inkl. Prüfungsvorbereitung CPUX-F)",                                         url: "https://www.oose.de/seminar/usability-und-user-experience-gestalten-inkl-prufungsvorbereitung-cpux-f" },
+  "VIS":                   { title: "Visualisierungswerkstatt (Visual Facilitation)",                                                                      url: "https://www.oose.de/seminar/visualisierungswerkstatt-visual-facilitation" },
+  "VPS":                   { title: "Vertrauen und psychologische Sicherheit im Zeitalter der KI",                                                         url: "https://www.oose.de/seminar/vertrauen-und-psychologische-sicherheit-im-zeitalter-der-ki" },
+  "WAC":                   { title: "Wertstiftender Agile Coach",                                                                                          url: "https://www.wertstiftender-agile-coach.de/" },
+  "WAC Modul 1":           { title: "Wertstiftender Agile Coach",                                                                                          url: "https://www.wertstiftender-agile-coach.de/" },
+  "WAC Modul 2":           { title: "Wertstiftender Agile Coach",                                                                                          url: "https://www.wertstiftender-agile-coach.de/" },
+  "WAC Modul 3":           { title: "Wertstiftender Agile Coach",                                                                                          url: "https://www.wertstiftender-agile-coach.de/" },
+  "WAC Modul 4":           { title: "Wertstiftender Agile Coach",                                                                                          url: "https://www.wertstiftender-agile-coach.de/" },
+  "WAC Modul 5":           { title: "Wertstiftender Agile Coach",                                                                                          url: "https://www.wertstiftender-agile-coach.de/" },
+  "WAC Modul 6":           { title: "Wertstiftender Agile Coach",                                                                                          url: "https://www.wertstiftender-agile-coach.de/" },
+  "WEB-APPS":              { title: "Single-Page-Anwendungen mit React und TypeScript",                                                                    url: "https://www.oose.de/seminar/single-page-anwendungen-mit-react-und-typescript" },
+  "WEB-AUTH":              { title: "Web-Authentifizierung",                                                                                               url: "https://www.oose.de/seminar/web-authentifizierung" },
+  "WEBAPP-SEC-ENG":        { title: "Security for Webapplications",                                                                                  url: "" },
+  "WEBAPP-SEC":            { title: "Sicherheit für Webanwendungen",                                                                                       url: "https://www.oose.de/seminar/sicherheit-fur-webanwendungen" },
+  "ZKF":                   { title: "Vertrauensvoll zusammenarbeiten durch konstruktives Feedback",                                                        url: "https://www.oose.de/seminar/vertrauensvoll-zusammenarbeiten-durch-konstruktives-feedback" },
+  "ZRM":                   { title: "Innere Stärke für unsichere Zeiten – Zukunftskompetenz mit dem Zürcher Ressourcenmodell®",                            url: "https://www.oose.de/seminar/innere-starke-fur-unsichere-zeiten-zukunftskompetenz-mit-dem-zurcher-ressourcenmodell" }
+};
+
+let data    = [];
+let sortKey = 'start';
+let sortDir = 1;
+const now   = new Date();
+
+const LANG_ISO = { de: 'de', en: 'gb' };
+const langBadge = code => {
+  const iso = LANG_ISO[code];
+  return iso ? `<span class="fi fi-${iso}" title="${code}"></span>` : '<span class="dim">—</span>';
+};
+
+function detectLang(shortCode) {
+  if (!shortCode) return 'de';
+  if (/[-_](?:ENGL\([^)]*\)|ENGL|ENG|EN)$/i.test(shortCode)) return 'en';
+  return 'de';
+}
+
+/* ── helpers ─────────────────────────────────────── */
+const fmtDate = iso => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
+const trainerStr = t =>
+  t && t.length ? t.map(x => `${x.firstName} ${x.lastName}`).join(', ') : '';
+
+const isHannes = t =>
+  t && t.some(x => x.firstName === 'Hannes' && x.lastName === 'Molsen');
+
+const courseTitle = e => (COURSE_DATA[e.courseShortCode] || {}).title || '';
+const courseUrl   = e => {
+  const code  = e.courseShortCode;
+  if (!code) return '';
+  const entry = COURSE_DATA[code];
+  return (entry && entry.url) || `https://www.oose.de/suche?q=${encodeURIComponent(code)}`;
+};
+const courseLang  = e => detectLang(e.courseShortCode);
+
+const sortVal = (e, key) => {
+  switch (key) {
+    case 'courseShortCode':       return (e.courseShortCode || '').toLowerCase();
+    case 'title':                 return courseTitle(e).toLowerCase();
+    case 'lang':                  return courseLang(e).toLowerCase();
+    case 'start':                 return e.start || '';
+    case 'end':                   return e.end   || '';
+    case 'trainer':               return trainerStr(e.trainers).toLowerCase();
+    case 'numberOfParticipants':  return e.numberOfParticipants ?? -1;
+    case 'location':              return (e.location || '').toLowerCase();
+    default:                      return '';
+  }
+};
+
+const locationBadge = e => {
+  if (e.isOnline || (e.location || '').toLowerCase() === 'online')
+    return `<span class="loc-badge loc-online">Online</span>`;
+  if ((e.location || '').toLowerCase().includes('hamburg') || e.address)
+    return `<span class="loc-badge loc-inperson" title="${e.location}">${e.location}</span>`;
+  return `<span class="loc-badge loc-other" title="${e.location || ''}">${e.location || '—'}</span>`;
+};
+
+/* ── render ──────────────────────────────────────── */
+function render() {
+  const q       = document.getElementById('filter').value.trim().toLowerCase();
+  const future  = document.getElementById('chkFuture').checked;
+  const hannesF = document.getElementById('chkHannes').checked;
+
+  let rows = data.filter(e => {
+    if (future && new Date(e.end) < now) return false;
+    if (hannesF && !isHannes(e.trainers)) return false;
+    if (!q) return true;
+    return (e.courseShortCode || '').toLowerCase().includes(q)
+        || courseTitle(e).toLowerCase().includes(q)
+        || trainerStr(e.trainers).toLowerCase().includes(q)
+        || (e.location || '').toLowerCase().includes(q);
+  });
+
+  rows.sort((a, b) => {
+    const va = sortVal(a, sortKey), vb = sortVal(b, sortKey);
+    return va < vb ? -sortDir : va > vb ? sortDir : 0;
+  });
+
+  document.getElementById('count').textContent =
+    `${rows.length} von ${data.length} Terminen`;
+
+  if (!rows.length) {
+    document.getElementById('tbody').innerHTML =
+      '<tr><td colspan="9" style="text-align:center;padding:14px;color:#999">Keine Treffer</td></tr>';
+    return;
+  }
+
+  document.getElementById('tbody').innerHTML = rows.map(e => {
+    const hannes = isHannes(e.trainers);
+    const past   = new Date(e.end) < now;
+    const max    = e.maxNumberOfParticipants || 0;
+    const cur    = e.numberOfParticipants    || 0;
+    const pct    = max ? Math.min(100, (cur / max) * 100) : 0;
+    const barCls = pct >= 100 ? 'bar-full' : pct >= 70 ? 'bar-medium' : 'bar-low';
+    const rowCls = [hannes ? 'hannes' : '', past ? 'past' : ''].filter(Boolean).join(' ');
+    const tname  = trainerStr(e.trainers);
+    const title  = courseTitle(e);
+    const lang   = courseLang(e);
+    const url    = courseUrl(e);
+
+    return `<tr class="${rowCls}">
+      <td>${fmtDate(e.start)}</td>
+      <td>${fmtDate(e.end)}</td>
+      <td title="${title}">${title || '<span class="dim">—</span>'}</td>
+      <td title="${e.courseShortCode || ''}">${e.courseShortCode || '<span class="dim">—</span>'}</td>
+      <td title="${tname}">${tname || '<span class="dim">—</span>'}</td>
+      <td style="text-align:center;padding:2px 2px">${langBadge(lang)}</td>
+      <td>
+        <div class="tn-cell">
+          <span class="tn-text">${cur}/${max || '?'}</span>
+          <div class="bar-bg"><div class="bar-fg ${barCls}" style="width:${pct}%"></div></div>
+        </div>
+      </td>
+      <td title="${e.location || ''}">${locationBadge(e)}</td>
+      <td style="text-align:center;padding:2px 2px"><a class="ext-link" href="${url}" target="_blank" title="${title || e.courseShortCode || ''}">↗</a></td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── sort ────────────────────────────────────────── */
+function setSort(th) {
+  const key = th.dataset.key;
+  sortDir = (sortKey === key) ? -sortDir : 1;
+  sortKey = key;
+  document.querySelectorAll('thead th').forEach(h => h.classList.remove('asc', 'desc'));
+  th.classList.add(sortDir === 1 ? 'asc' : 'desc');
+  render();
+}
+
+/* ── load ────────────────────────────────────────── */
+async function load() {
+  const statusEl = document.getElementById('status');
+  try {
+    const res = await fetch(API_EVENTS);
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    data = await res.json();
+    const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    statusEl.textContent = `${data.length} Termine · Stand ${t}`;
+    document.querySelector('th[data-key="start"]').classList.add('asc');
+    render();
+  } catch (err) {
+    statusEl.textContent = 'Fehler beim Laden';
+    const em = document.getElementById('error-msg');
+    em.style.display = 'block';
+    em.textContent = `Konnte Daten nicht laden: ${err.message}`;
+    document.getElementById('tbody').innerHTML = '';
+  }
+}
+
+load();
+</script>
+</body>
+</html>
