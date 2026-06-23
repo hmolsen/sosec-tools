@@ -15,6 +15,9 @@
             outline: 2px solid #17177B;
             outline-offset: -2px;
         }
+        /* Pencil icon fades in when hovering the card header */
+        .card-hdr .edit-hint { opacity: 0; transition: opacity 0.15s; }
+        .card-hdr:hover .edit-hint { opacity: 1; }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8">
@@ -96,6 +99,45 @@
     </footer>
 
     <script>
+        // ── Word lists for random group names ──────────────────────────────────
+        const ADJECTIVES = [
+            'Flying', 'Cunning', 'Brave', 'Swift', 'Mighty', 'Fierce', 'Clever', 'Sneaky',
+            'Bold', 'Daring', 'Fuzzy', 'Grumpy', 'Hungry', 'Speedy', 'Tiny', 'Ancient',
+            'Mystic', 'Golden', 'Cosmic', 'Electric', 'Turbo', 'Disco', 'Neon', 'Radical',
+            'Epic', 'Legendary', 'Invisible', 'Exploding', 'Bouncing', 'Spinning', 'Dancing',
+            'Roaring', 'Howling', 'Charging', 'Glowing', 'Frozen', 'Flaming', 'Crystal',
+            'Iron', 'Rubber', 'Sparkly', 'Magnificent', 'Thundering', 'Shadow', 'Silver',
+            'Caffeinated', 'Philosophical', 'Unstoppable', 'Peculiar', 'Turbocharged',
+        ];
+
+        const ANIMALS = [
+            'Fox', 'Beaver', 'Wolf', 'Bear', 'Eagle', 'Shark', 'Tiger', 'Panda', 'Penguin',
+            'Koala', 'Platypus', 'Narwhal', 'Octopus', 'Flamingo', 'Gecko', 'Sloth',
+            'Capybara', 'Axolotl', 'Wombat', 'Hedgehog', 'Raccoon', 'Otter', 'Mongoose',
+            'Meerkat', 'Chameleon', 'Armadillo', 'Pangolin', 'Quokka', 'Tapir', 'Walrus',
+            'Yak', 'Llama', 'Alpaca', 'Jaguar', 'Cheetah', 'Hyena', 'Wolverine', 'Badger',
+            'Ferret', 'Ocelot', 'Bobcat', 'Lynx', 'Bison', 'Moose', 'Reindeer', 'Manatee',
+            'Tardigrade', 'Dingo', 'Weasel', 'Salamander',
+        ];
+
+        function randomGroupName(exclude = []) {
+            const excluded = new Set(exclude);
+            let name, attempts = 0;
+            do {
+                const adj    = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+                const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+                name = `${adj} ${animal}`;
+                attempts++;
+            } while (excluded.has(name) && attempts < 200);
+            return name;
+        }
+
+        function generateGroupNames(count) {
+            const names = [];
+            for (let i = 0; i < count; i++) names.push(randomGroupName(names));
+            return names;
+        }
+
         // ── State ──────────────────────────────────────────────────────────────
         const STORAGE_KEY = 'ss-group-tool';
 
@@ -104,6 +146,7 @@
             numGroups:    3,
             groups:       [],   // array of string arrays
             unassigned:   [],   // names not yet in any group
+            groupNames:   [],   // display name for each group  ← new in v2
         };
 
         let drag = null; // { name: string, from: number }  -1 = unassigned pool
@@ -128,7 +171,20 @@
                 const raw = localStorage.getItem(STORAGE_KEY);
                 if (!raw) return;
                 const parsed = JSON.parse(raw);
-                if (parsed && Array.isArray(parsed.participants)) state = parsed;
+                if (!parsed || !Array.isArray(parsed.participants)) return;
+                state = parsed;
+
+                // ── Migration: add groupNames if this is old data ──────────────
+                if (!Array.isArray(state.groupNames)) {
+                    state.groupNames = generateGroupNames(state.groups.length);
+                } else {
+                    // Fill any missing entries (e.g. groups were added externally)
+                    while (state.groupNames.length < state.groups.length) {
+                        state.groupNames.push(randomGroupName(state.groupNames));
+                    }
+                    // Trim excess entries
+                    state.groupNames = state.groupNames.slice(0, state.groups.length);
+                }
             } catch (_) { /* ignore corrupt data */ }
         }
 
@@ -149,12 +205,11 @@
 
         // ── Render ─────────────────────────────────────────────────────────────
         function render() {
-            // Sync controls
             participantInput.value = state.participants.join('\n');
             groupCountInput.value  = state.numGroups;
 
-            const total    = state.participants.length;
-            const nGroups  = state.groups.length;
+            const total       = state.participants.length;
+            const nGroups     = state.groups.length;
             const nUnassigned = state.unassigned.length;
 
             // Stats bar
@@ -202,23 +257,57 @@
             card.className = 'drop-zone bg-white rounded-xl border border-gray-200 shadow-lg p-5 flex flex-col min-h-36 transition-colors duration-150';
             registerDropZone(card, idx);
 
-            // Header
+            // ── Header with editable name ──────────────────────────────────────
             const hdr = document.createElement('div');
-            hdr.className = 'flex justify-between items-center mb-3 pb-2 border-b border-gray-200';
+            hdr.className = 'card-hdr flex items-center gap-2 mb-3 pb-2 border-b border-gray-200';
 
-            const title = document.createElement('h3');
-            title.className = 'font-bold text-black';
-            title.textContent = `Group ${idx + 1}`;
+            // Name input — looks like a heading, editable on click
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.value = state.groupNames[idx];
+            nameInput.className = 'font-bold text-black bg-transparent min-w-0 flex-1 border-b-2 border-transparent hover:border-gray-300 focus:border-[#17177B] focus:outline-none transition-colors duration-150 cursor-pointer focus:cursor-text';
 
+            nameInput.addEventListener('blur', () => {
+                const trimmed = nameInput.value.trim();
+                const newName = trimmed || randomGroupName(state.groupNames.filter((_, i) => i !== idx));
+                nameInput.value = newName;
+                if (newName !== state.groupNames[idx]) {
+                    state.groupNames[idx] = newName;
+                    save();
+                }
+            });
+            nameInput.addEventListener('keydown', e => {
+                if (e.key === 'Enter')  { e.preventDefault(); nameInput.blur(); }
+                if (e.key === 'Escape') { nameInput.value = state.groupNames[idx]; nameInput.blur(); }
+            });
+            // Stop drag events from bubbling up to the card drop zone while typing
+            nameInput.addEventListener('dragstart', e => e.stopPropagation());
+
+            // Pencil icon — visible on card-hdr hover via CSS
+            const pencil = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            pencil.setAttribute('class', 'edit-hint shrink-0 w-3.5 h-3.5 text-gray-400');
+            pencil.setAttribute('viewBox', '0 0 24 24');
+            pencil.setAttribute('fill', 'none');
+            pencil.setAttribute('stroke', 'currentColor');
+            pencil.setAttribute('stroke-width', '2');
+            pencil.setAttribute('aria-hidden', 'true');
+            const pPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            pPath.setAttribute('stroke-linecap', 'round');
+            pPath.setAttribute('stroke-linejoin', 'round');
+            pPath.setAttribute('d', 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125');
+            pencil.appendChild(pPath);
+
+            // Participant count badge
             const badge = document.createElement('span');
-            badge.className = 'text-xs text-gray-500 bg-[#E7E6E6] px-2 py-0.5 rounded-full tabular-nums';
+            badge.className = 'text-xs text-gray-500 bg-[#E7E6E6] px-2 py-0.5 rounded-full tabular-nums shrink-0';
             badge.textContent = state.groups[idx].length;
 
-            hdr.appendChild(title);
+            hdr.appendChild(nameInput);
+            hdr.appendChild(pencil);
             hdr.appendChild(badge);
             card.appendChild(hdr);
 
-            // Chips area
+            // ── Chips area ─────────────────────────────────────────────────────
             const area = document.createElement('div');
             area.className = 'flex flex-wrap gap-2 flex-grow content-start';
 
@@ -264,7 +353,6 @@
             chip.addEventListener('dragstart', e => {
                 drag = { name, from: fromGroup };
                 e.dataTransfer.effectAllowed = 'move';
-                // defer so browser captures the chip before it fades
                 setTimeout(() => chip.classList.add('dragging'), 0);
             });
             chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
@@ -319,6 +407,7 @@
             state.numGroups    = n;
             state.unassigned   = [];
             state.groups       = Array.from({ length: n }, () => []);
+            state.groupNames   = generateGroupNames(n);
 
             // Fisher-Yates shuffle then round-robin into groups
             const shuffled = [...unique];
@@ -340,6 +429,11 @@
             }
             state.unassigned = [...state.participants];
             state.groups     = Array.from({ length: state.numGroups }, () => []);
+            // Keep existing group names; top up if numGroups grew
+            while (state.groupNames.length < state.numGroups) {
+                state.groupNames.push(randomGroupName(state.groupNames));
+            }
+            state.groupNames = state.groupNames.slice(0, state.numGroups);
             save();
             render();
             showToast('All participants moved back to unassigned.', 'info');
@@ -347,7 +441,7 @@
 
         function confirmResetAll() {
             if (!confirm('Reset everything? All participants and groups will be cleared.')) return;
-            state = { participants: [], numGroups: 3, groups: [], unassigned: [] };
+            state = { participants: [], numGroups: 3, groups: [], unassigned: [], groupNames: [] };
             localStorage.removeItem(STORAGE_KEY);
             render();
             showToast('Reset complete.', 'info');
