@@ -309,9 +309,11 @@
         }
 
         // ── Edit-mode render ───────────────────────────────────────────────────
-        function render() {
-            participantInput.value = state.participants.join('\n');
-            groupCountInput.value  = state.numGroups;
+        function render(skipTextarea = false) {
+            if (!skipTextarea) {
+                participantInput.value = state.participants.join('\n');
+                groupCountInput.value  = state.numGroups;
+            }
 
             refreshStatsBar();
 
@@ -621,8 +623,38 @@
             });
         } else {
             render();
-            participantInput.addEventListener('input', refreshStatsBar);
+            participantInput.addEventListener('input', () => {
+                if (state.groups.length > 0) syncParticipants();
+                else refreshStatsBar();
+            });
             groupCountInput.addEventListener('input', refreshStatsBar);
+        }
+
+        function syncParticipants() {
+            const names   = participantInput.value.split('\n').map(n => n.trim()).filter(Boolean);
+            const unique  = [...new Set(names)];
+            const oldSet  = new Set(state.participants);
+            const newSet  = new Set(unique);
+            const removed = state.participants.filter(n => !newSet.has(n));
+            const added   = unique.filter(n => !oldSet.has(n));
+
+            if (removed.length === 1 && added.length === 1) {
+                // Single rename: update in-place wherever the old name lives
+                const [oldName, newName] = [removed[0], added[0]];
+                state.unassigned = state.unassigned.map(n => n === oldName ? newName : n);
+                state.groups     = state.groups.map(g => g.map(n => n === oldName ? newName : n));
+            } else {
+                // Additions and/or deletions
+                added.forEach(name => state.unassigned.push(name));
+                removed.forEach(name => {
+                    state.unassigned = state.unassigned.filter(n => n !== name);
+                    state.groups     = state.groups.map(g => g.filter(n => n !== name));
+                });
+            }
+
+            state.participants = unique;
+            save();
+            render(true);
         }
     </script>
 </body>
