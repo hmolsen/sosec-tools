@@ -184,16 +184,20 @@
                 state = parsed;
 
                 // ── Migration: add groupNames if this is old data ──────────────
+                let migrated = false;
                 if (!Array.isArray(state.groupNames)) {
                     state.groupNames = generateGroupNames(state.groups.length);
+                    migrated = true;
                 } else {
                     // Fill any missing entries (e.g. groups were added externally)
                     while (state.groupNames.length < state.groups.length) {
                         state.groupNames.push(randomGroupName(state.groupNames));
+                        migrated = true;
                     }
                     // Trim excess entries
                     state.groupNames = state.groupNames.slice(0, state.groups.length);
                 }
+                if (migrated) save();
             } catch (_) { /* ignore corrupt data */ }
         }
 
