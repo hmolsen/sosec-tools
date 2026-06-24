@@ -3,15 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#7B1717">
 <title>oose Trainingsübersicht</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css">
+<link rel="preload" href="/commons/fonts/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B4gaVI.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/commons/style.css">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 11.5px;
-    background: #eef1f6;
+    background: #E7E6E6;
     color: #222;
     height: 100vh;
     display: flex;
@@ -20,7 +22,7 @@
   }
 
   header {
-    background: #1b3d6e;
+    background: #7B1717;
     color: #fff;
     padding: 6px 14px;
     display: flex;
@@ -29,7 +31,20 @@
     flex-shrink: 0;
   }
   header h1 { font-size: 14px; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
-  #status { font-size: 10.5px; color: #9bb8d8; margin-left: auto; white-space: nowrap; }
+  #status { font-size: 10.5px; color: rgba(255,255,255,0.65); margin-left: auto; white-space: nowrap; }
+
+  a.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.75);
+    text-decoration: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: color 0.15s;
+  }
+  a.back-link:hover { color: #fff; }
 
   .toolbar {
     background: #fff;
@@ -48,8 +63,10 @@
     font-size: 11px;
     width: 220px;
     outline: none;
+    background: #E7E6E6;
+    font-family: 'Open Sans', sans-serif;
   }
-  .toolbar input[type=text]:focus { border-color: #1b3d6e; }
+  .toolbar input[type=text]:focus { border-color: #17177B; }
   #count { font-size: 10.5px; color: #888; margin-left: auto; }
 
   .table-wrap {
@@ -75,8 +92,8 @@
   /* col 9 */ colgroup .c-link     { width: 28px;  }
 
   thead th {
-    background: #243f6a;
-    color: #d6e4f5;
+    background: #7B1717;
+    color: #fff;
     padding: 4px 7px;
     text-align: left;
     cursor: pointer;
@@ -87,10 +104,10 @@
     font-weight: 600;
     white-space: nowrap;
     user-select: none;
-    border-right: 1px solid #1a3059;
+    border-right: 1px solid #631212;
   }
   thead th:last-child { border-right: none; }
-  thead th:hover { background: #2e5291; color: #fff; }
+  thead th:hover { background: #C05C5C; color: #fff; }
   thead th.th-lang { text-align: center; padding: 4px 2px; }
   thead th.asc  { color: #ffd54f; }
   thead th.desc { color: #ffd54f; }
@@ -103,7 +120,7 @@
   }
   tbody tr:nth-child(even) { background: #f7f9fc; }
   tbody tr:nth-child(odd)  { background: #fff; }
-  tbody tr:hover           { background: #dce8f8 !important; }
+  tbody tr:hover           { background: #F8E6E6 !important; }
 
   tbody tr.hannes       { background: #fff8e1 !important; border-left: 3px solid #f4a700; }
   tbody tr.hannes:hover { background: #ffeeb3 !important; }
@@ -158,20 +175,20 @@
     height: 18px;
     margin: auto;
     border-radius: 3px;
-    color: #1b3d6e;
+    color: #7B1717;
     text-decoration: none;
     font-size: 13px;
     line-height: 1;
     opacity: .7;
     transition: opacity .1s;
   }
-  a.ext-link:hover { opacity: 1; background: #dce8f8; }
+  a.ext-link:hover { opacity: 1; background: #F8E6E6; }
 
   #error-msg {
     display: none;
     padding: 20px;
     text-align: center;
-    color: #c62828;
+    color: #7B1717;
     font-size: 13px;
   }
 </style>
@@ -179,6 +196,12 @@
 <body>
 
 <header>
+  <a href="/" class="back-link">
+    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+    </svg>
+    All Tools
+  </a>
   <h1>oose Trainingsübersicht</h1>
   <span id="status">Lade…</span>
 </header>
