@@ -16,7 +16,7 @@ name is hardcoded in `update_certs.sh`).
 
 | File | Purpose |
 |---|---|
-| `certgen.php` | Bare HTML form: KAS password + 2FA one-time PIN, posts to `certgen_post.php`. |
+| `certgen.php` | The UI, in SoSecTools house style: KAS password + 2FA one-time PIN, posts to `certgen_post.php` and streams the run log back into the page. |
 | `certgen_post.php` | Does all the work: KAS login → ACME `dns-01` order → writes PEMs → builds `certs.tar`. |
 | `ACMECert/` | Vendored [skoerfgen/ACMECert](https://github.com/skoerfgen/ACMECert) 3.4.0 (MIT), the ACME v2 client. Unmodified upstream — do not patch, replace wholesale on upgrade. |
 | `certs/` | Output: `<domain>.fullchain.pem` and `<domain>.private_key.pem` for both domains. |
@@ -59,8 +59,13 @@ The whole thing is a single `&&`-chain, so any failed step aborts the rest silen
 **Renewing (server, from a browser):**
 
 1. Open `https://cqrity.de/vm/certgen.php`, enter the KAS password and the current 2FA OTP.
-2. Watch the streamed log. Success ends in `Seems like everything went through smoooooothly.`
-3. `certs.tar` is now regenerated and served at `https://cqrity.de/vm/certs.tar`.
+2. Watch the run log stream into the page. The status box above it summarises the outcome —
+   green on success, yellow if the 80-day guard stopped the run early, red on a reported error.
+3. On success, `certs.tar` is regenerated and served at `https://cqrity.de/vm/certs.tar`.
+
+The page submits over `fetch` and strips all markup out of the response before rendering it, so the
+backend's raw HTML is never inserted as live HTML. Without JS it degrades to a plain form POST and
+you get `certgen_post.php`'s unstyled output directly.
 
 **Refreshing a VM (on the VM, or wired into boot):**
 
