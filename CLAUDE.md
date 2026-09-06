@@ -1,11 +1,25 @@
 # SoSecTools
 
 A collection of small, self-contained security/utility web tools hosted on a PHP server at
-`hannesmolsen.de`. Each tool lives in its own top-level folder and is a single static
+`cqrity.de`. Each tool lives in its own top-level folder and is a single static
 `index.html` (HTML + Tailwind via CDN + vanilla JS in one file) served at `/<tool>/`. There is
 no build step, no bundler, no npm project — everything runs directly in the browser.
 
 The site root `index.html` is a card-grid overview page linking to every tool.
+
+## Two domains — don't mix them up
+
+- **`cqrity.de` is this repo.** It is where the tools are deployed and the doc root everything
+  root-relative resolves against: tool links (`/groups/`, `/vm/certgen.php`), the shared assets
+  under `/commons/` (`style.css`, `fonts/`), and the `/` "All Tools" back-link. Anything that is
+  part of this site is referenced root-relative and lands on `cqrity.de`.
+- **`hannesmolsen.de` is Hannes' personal website**, a separate site. This repo links *out* to it
+  in exactly three places, always with an absolute `https://hannesmolsen.de/...` URL: the header
+  logo image, and the Impressum / Datenschutz / name links in the footer.
+
+So: a new in-repo path is root-relative (`/tool/`), and the only absolute `hannesmolsen.de` URLs
+in a new tool are the logo plus the three footer links copied verbatim. Never serve or link a tool
+under `hannesmolsen.de`, and never make the logo or legal links root-relative.
 
 ## Reference implementation
 

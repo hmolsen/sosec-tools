@@ -7,8 +7,9 @@ one-liner the training VMs run at boot to pick those certificates up.
 It is **not** part of the SoSecTools browser-tool collection — no Tailwind, no house style, it is
 plain PHP that runs server-side plus a shell script that runs on the VM.
 
-The whole folder is deployed to a web host and served at **`https://cqrity.de/vm/`** (that host
-name is hardcoded in `update_certs.sh`).
+The whole folder ships with the rest of this repo to the SoSecTools host and is served at
+**`https://cqrity.de/vm/`** — that URL is hardcoded in `update_certs.sh`, so the VMs break if the
+folder ever moves.
 
 ## The two halves
 
