@@ -1,1 +1,7 @@
 .claude/settings.local.json
+
+# vm/ — private keys and server-generated artifacts, never commit
+vm/certs/*.private_key.pem
+vm/account_key.pem
+vm/certs.tar
+vm/php-error.log
