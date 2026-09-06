@@ -4,8 +4,9 @@ This folder is the small server-side plumbing that keeps the two training domain
 **`vulnerads.de`** and **`attacat.de`** supplied with valid Let's Encrypt certificates, and the
 one-liner the training VMs run at boot to pick those certificates up.
 
-It is **not** part of the SoSecTools browser-tool collection — no Tailwind, no house style, it is
-plain PHP that runs server-side plus a shell script that runs on the VM.
+Unlike the other tools in this repo it is not a client-side toy: the real work happens in PHP on
+the server, plus a shell script that runs on the VM. Only the operator UI (`certgen.php`) follows
+the SoSecTools house style and is linked from the root overview page.
 
 The whole folder ships with the rest of this repo to the SoSecTools host and is served at
 **`https://cqrity.de/vm/`** — that URL is hardcoded in `update_certs.sh`, so the VMs break if the
@@ -17,7 +18,7 @@ folder ever moves.
 
 | File | Purpose |
 |---|---|
-| `certgen.php` | The UI, in SoSecTools house style: KAS password + 2FA one-time PIN, posts to `certgen_post.php` and streams the run log back into the page. |
+| `certgen.php` | The UI, in SoSecTools house style. Reads the current `certs/` contents server-side with `openssl_x509_parse` and shows subject, validity window, days remaining, issuer, serial and chain length per domain; below that, the KAS password + 2FA form, which posts to `certgen_post.php` and streams the run log back into the page. |
 | `certgen_post.php` | Does all the work: KAS login → ACME `dns-01` order → writes PEMs → builds `certs.tar`. |
 | `ACMECert/` | Vendored [skoerfgen/ACMECert](https://github.com/skoerfgen/ACMECert) 3.4.0 (MIT), the ACME v2 client. Unmodified upstream — do not patch, replace wholesale on upgrade. |
 | `certs/` | Output: `<domain>.fullchain.pem` and `<domain>.private_key.pem` for both domains. |
@@ -59,10 +60,14 @@ The whole thing is a single `&&`-chain, so any failed step aborts the rest silen
 
 **Renewing (server, from a browser):**
 
-1. Open `https://cqrity.de/vm/certgen.php`, enter the KAS password and the current 2FA OTP.
-2. Watch the run log stream into the page. The status box above it summarises the outcome —
+1. Open `https://cqrity.de/vm/certgen.php`. The top card shows what the VMs are currently being
+   served — check the expiry dates there first; it also warns when the 80-day guard will block a
+   reissue, or when `certs.tar` is older than the PEMs beside it.
+2. Enter the KAS password and the current 2FA OTP.
+3. Watch the run log stream into the page. The status box above it summarises the outcome —
    green on success, yellow if the 80-day guard stopped the run early, red on a reported error.
-3. On success, `certs.tar` is regenerated and served at `https://cqrity.de/vm/certs.tar`.
+4. On success, `certs.tar` is regenerated and served at `https://cqrity.de/vm/certs.tar`. Hit
+   **Refresh** on the top card to re-read the new certificate details.
 
 The page submits over `fetch` and strips all markup out of the response before rendering it, so the
 backend's raw HTML is never inserted as live HTML. Without JS it degrades to a plain form POST and

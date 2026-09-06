@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7B1717">
+    <title>Software Security – Certificate Decoder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- X.509 / CSR / CRL parsing. Both libraries are UMD builds that define real browser
+         globals (jsrsasign -> X509, KJUR, X509CRL; node-forge -> forge) when loaded as a
+         classic <script src>. Verified before use: see the punycode tool for what happens
+         when a CDN file turns out to be CommonJS only. -->
+    <script src="https://cdn.jsdelivr.net/npm/jsrsasign@11.1.0/lib/jsrsasign-all-min.js"></script>
+    <!-- node-forge is used ONLY to open PKCS#7 and PKCS#12 containers; the certificates it
+         yields are re-encoded to DER and rendered by jsrsasign like any other. -->
+    <script src="https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js"></script>
+    <link rel="preload" href="/commons/fonts/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B4gaVI.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/commons/style.css">
+    <style>
+        .drop-zone.drag-over {
+            background-color: #E6E6F8;
+            outline: 2px solid #17177B;
+            outline-offset: -2px;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <nav class="mb-6">
+        <a href="/" class="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[#7B1717] transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            All Tools
+        </a>
+    </nav>
+
+    <header class="text-center mb-10">
+        <img src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" class="mx-auto h-20 mb-4 rounded-lg" />
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Certificate Decoder</h1>
+        <p class="text-xl text-gray-500">Drop a certificate in any common format and read it as <code>openssl x509 -noout -text</code></p>
+    </header>
+
+    <main class="max-w-5xl mx-auto space-y-6">
+
+        <!-- ══ INPUT ══════════════════════════════════════════════════════════ -->
+        <div id="inputCard" class="drop-zone bg-white p-6 md:p-8 rounded-xl shadow-2xl transition-colors duration-150">
+            <h2 class="text-2xl font-bold text-black mb-6 border-b pb-2">Input</h2>
+
+            <label for="certInput" class="block text-sm font-medium text-gray-700 mb-1">
+                Paste a certificate, chain, CSR or CRL:
+            </label>
+            <textarea id="certInput" rows="8" spellcheck="false"
+                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm resize-y font-mono text-sm bg-[#E7E6E6]"
+                placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDdzCCAl+gAwIBAgIE...&#10;-----END CERTIFICATE-----&#10;&#10;PEM, a bare base64 blob, or drop a file anywhere on this card."></textarea>
+
+            <div class="flex items-center justify-center my-4">
+                <div class="w-full border-t border-gray-200"></div>
+                <span class="px-3 text-xs text-gray-500 bg-white whitespace-nowrap">OR DROP / CHOOSE A FILE</span>
+                <div class="w-full border-t border-gray-200"></div>
+            </div>
+
+            <label for="certFile" class="block text-sm font-medium text-gray-700 mb-1">
+                .pem .crt .cer .der .p7b .pfx .p12 .csr .crl
+            </label>
+            <input type="file" id="certFile" multiple
+                accept=".pem,.crt,.cer,.der,.p7b,.p7c,.pfx,.p12,.csr,.crl,.txt"
+                class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 transition">
+
+            <!-- PKCS#12 password, revealed only when a .p12/.pfx turns up -->
+            <div id="passwordRow" class="hidden mt-4 p-4 rounded-lg border border-[#17177B] bg-[#E6E6F8]">
+                <label for="p12Password" class="block text-sm font-medium text-[#17177B] mb-1">
+                    This is a PKCS#12 container — enter its password:
+                </label>
+                <div class="flex flex-wrap gap-2">
+                    <input type="password" id="p12Password" autocomplete="off"
+                        class="flex-grow min-w-[12rem] p-3 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm font-mono text-sm bg-white"
+                        placeholder="password">
+                    <button onclick="unlockP12()"
+                        class="px-4 py-3 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-[#7B1717] focus:ring-offset-2">
+                        Unlock
+                    </button>
+                </div>
+            </div>
+
+            <div id="status" class="mt-4 p-3 rounded-lg border hidden text-sm"></div>
+
+            <div class="mt-6 flex flex-wrap gap-2">
+                <button onclick="decodeInput()"
+                    class="px-4 py-3 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-[#7B1717] focus:ring-offset-2">
+                    Decode
+                </button>
+                <button onclick="clearAll()"
+                    class="px-4 py-3 border-2 border-[#7B1717] text-[#7B1717] font-semibold rounded-lg hover:bg-[#F8E6E6] transition duration-150">
+                    Clear
+                </button>
+            </div>
+        </div>
+
+        <!-- ══ SUMMARY ════════════════════════════════════════════════════════ -->
+        <div id="summaryCard" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+            <h2 class="text-2xl font-bold text-black mb-6 border-b pb-2">Summary</h2>
+            <div id="summaryBody" class="space-y-6"></div>
+        </div>
+
+        <!-- ══ OPENSSL OUTPUT ═════════════════════════════════════════════════ -->
+        <div id="outputCard" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-6 border-b pb-2">
+                <h2 class="text-2xl font-bold text-black">openssl -noout -text</h2>
+                <button id="copyBtn" onclick="copyOutput(this)"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-[#7B1717] text-white text-sm font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                    </svg>
+                    Copy
+                </button>
+            </div>
+            <textarea id="output" readonly rows="30" spellcheck="false"
+                class="w-full p-3 border border-gray-300 rounded-lg resize-y font-mono text-xs bg-[#E7E6E6] text-gray-800"></textarea>
+        </div>
+
+        <p class="text-center text-xs text-gray-500">
+            Everything is parsed in your browser. No certificate, key or password is ever uploaded.
+        </p>
+    </main>
+
+    <footer class="mt-12 py-6 text-center text-sm text-gray-500">
+        <p class="mb-2">&copy; 2026 Software Security</p>
+        <ul class="flex justify-center gap-6 list-none p-0">
+            <li><a href="https://hannesmolsen.de/impressum.html" class="hover:underline">Impressum</a></li>
+            <li><a href="https://hannesmolsen.de/datenschutz.html" class="hover:underline">Datenschutz</a></li>
+            <li><a href="https://hannesmolsen.de" class="hover:underline">Hannes Molsen</a></li>
+        </ul>
+    </footer>
+
+    <script>
+        // ── Name maps (jsrsasign vocabulary -> openssl vocabulary) ─────────────
+
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+        const SIGALG_NAMES = {
+            'MD5withRSA':      'md5WithRSAEncryption',
+            'SHA1withRSA':     'sha1WithRSAEncryption',
+            'SHA224withRSA':   'sha224WithRSAEncryption',
+            'SHA256withRSA':   'sha256WithRSAEncryption',
+            'SHA384withRSA':   'sha384WithRSAEncryption',
+            'SHA512withRSA':   'sha512WithRSAEncryption',
+            'SHA1withECDSA':   'ecdsa-with-SHA1',
+            'SHA224withECDSA': 'ecdsa-with-SHA224',
+            'SHA256withECDSA': 'ecdsa-with-SHA256',
+            'SHA384withECDSA': 'ecdsa-with-SHA384',
+            'SHA512withECDSA': 'ecdsa-with-SHA512',
+            'SHA1withDSA':     'dsa-with-SHA1',
+            'SHA256withDSA':   'dsa_with_SHA256',
+            'SHA1withRSAandMGF1':   'rsassaPss',
+            'SHA256withRSAandMGF1': 'rsassaPss',
+            'SHA384withRSAandMGF1': 'rsassaPss',
+            'SHA512withRSAandMGF1': 'rsassaPss',
+            'Ed25519':         'ED25519',
+            'Ed448':           'ED448',
+        };
+
+        const KEYUSAGE_NAMES = {
+            digitalSignature: 'Digital Signature',
+            nonRepudiation:   'Non Repudiation',
+            keyEncipherment:  'Key Encipherment',
+            dataEncipherment: 'Data Encipherment',
+            keyAgreement:     'Key Agreement',
+            keyCertSign:      'Certificate Sign',
+            cRLSign:          'CRL Sign',
+            encipherOnly:     'Encipher Only',
+            decipherOnly:     'Decipher Only',
+        };
+
+        const EKU_NAMES = {
+            serverAuth:           'TLS Web Server Authentication',
+            clientAuth:           'TLS Web Client Authentication',
+            codeSigning:          'Code Signing',
+            emailProtection:      'E-mail Protection',
+            timeStamping:         'Time Stamping',
+            ocspSigning:          'OCSP Signing',
+            OCSPSigning:          'OCSP Signing',
+            anyExtendedKeyUsage:  'Any Extended Key Usage',
+        };
+
+        // openssl labels. Note that a few extensions are printed WITHOUT the
+        // "X509v3 " prefix — Authority Information Access is the common one.
+        const EXT_LABELS = {
+            basicConstraints:           'X509v3 Basic Constraints',
+            keyUsage:                   'X509v3 Key Usage',
+            extKeyUsage:                'X509v3 Extended Key Usage',
+            subjectAltName:             'X509v3 Subject Alternative Name',
+            issuerAltName:              'X509v3 Issuer Alternative Name',
+            subjectKeyIdentifier:       'X509v3 Subject Key Identifier',
+            authorityKeyIdentifier:     'X509v3 Authority Key Identifier',
+            certificatePolicies:        'X509v3 Certificate Policies',
+            policyMappings:             'X509v3 Policy Mappings',
+            policyConstraints:          'X509v3 Policy Constraints',
+            inhibitAnyPolicy:           'X509v3 Inhibit Any Policy',
+            nameConstraints:            'X509v3 Name Constraints',
+            cRLDistributionPoints:      'X509v3 CRL Distribution Points',
+            freshestCRL:                'X509v3 Freshest CRL',
+            cRLNumber:                  'X509v3 CRL Number',
+            cRLReason:                  'X509v3 CRL Reason Code',
+            subjectDirectoryAttributes: 'X509v3 Subject Directory Attributes',
+            authorityInfoAccess:        'Authority Information Access',
+            ocspNoCheck:                'OCSP No Check',
+            adobeTimeStamp:             'Adobe Time Stamp',
+            '1.3.6.1.4.1.11129.2.4.2':  'CT Precertificate SCTs',
+        };
+
+        const CURVE_OID_NAMES = {
+            secp256r1: 'prime256v1', secp384r1: 'secp384r1',
+            secp521r1: 'secp521r1',  secp256k1: 'secp256k1',
+            secp224r1: 'secp224r1',  secp192r1: 'prime192v1',
+        };
+        const CURVE_NIST_NAMES = {
+            secp256r1: 'P-256', secp384r1: 'P-384', secp521r1: 'P-521',
+            secp224r1: 'P-224', secp192r1: 'P-192',
+        };
+        const CURVE_BITS = {
+            secp192r1: 192, secp224r1: 224, secp256r1: 256,
+            secp256k1: 256, secp384r1: 384, secp521r1: 521,
+        };
+
+        // ── State ──────────────────────────────────────────────────────────────
+
+        let items = [];          // [{kind, hex, obj, label}]
+        let pendingP12Hex = null; // container waiting for a password
+
+        // ── DOM references ─────────────────────────────────────────────────────
+
+        const inputCard   = document.getElementById('inputCard');
+        const certInput   = document.getElementById('certInput');
+        const certFile    = document.getElementById('certFile');
+        const passwordRow = document.getElementById('passwordRow');
+        const p12Password = document.getElementById('p12Password');
+        const statusEl    = document.getElementById('status');
+        const summaryCard = document.getElementById('summaryCard');
+        const summaryBody = document.getElementById('summaryBody');
+        const outputCard  = document.getElementById('outputCard');
+        const output      = document.getElementById('output');
+
+        // ── Status ─────────────────────────────────────────────────────────────
+
+        const STATUS_STYLES = {
+            success: 'bg-[#E6F3E6] text-[#177B17] border-[#177B17]',
+            error:   'bg-[#F8E6E6] text-[#7B1717] border-[#7B1717]',
+            warning: 'bg-[#FFFDE6] text-[#DFDF17] border-[#DFDF17]',
+            info:    'bg-[#E6E6F8] text-[#17177B] border-[#17177B]',
+        };
+
+        function showStatus(message, type = 'info') {
+            statusEl.className = `mt-4 p-3 rounded-lg border text-sm ${STATUS_STYLES[type]}`;
+            statusEl.textContent = message;
+            statusEl.classList.remove('hidden');
+            clearTimeout(statusEl._t);
+            // Errors stay put; notices fade.
+            if (type !== 'error') statusEl._t = setTimeout(() => statusEl.classList.add('hidden'), 5000);
+        }
+
+        function hideStatus() {
+            clearTimeout(statusEl._t);
+            statusEl.classList.add('hidden');
+        }
+
+        // ── Hex / encoding helpers ─────────────────────────────────────────────
+
+        function bytesToHex(uint8) {
+            let s = '';
+            for (let i = 0; i < uint8.length; i++) s += ('0' + uint8[i].toString(16)).slice(-2);
+            return s;
+        }
+
+        function pad(n) { return ' '.repeat(n); }
+
+        function colonHex(hex, upper) {
+            const out = [];
+            for (let i = 0; i < hex.length; i += 2) out.push(hex.substr(i, 2));
+            const s = out.join(':');
+            return upper ? s.toUpperCase() : s;
+        }
+
+        // openssl wraps hex dumps at a fixed number of bytes per line, each line
+        // indented, every byte followed by a colon except the very last one.
+        function wrapHexLines(hex, indent, perLine) {
+            const bytes = [];
+            for (let i = 0; i < hex.length; i += 2) bytes.push(hex.substr(i, 2));
+            const lines = [];
+            for (let i = 0; i < bytes.length; i += perLine) {
+                const chunk = bytes.slice(i, i + perLine);
+                const last = (i + perLine) >= bytes.length;
+                lines.push(pad(indent) + chunk.join(':') + (last ? '' : ':'));
+            }
+            return lines;
+        }
+
+        // ── openssl formatting helpers ─────────────────────────────────────────
+
+        function osslSigAlg(name) { return SIGALG_NAMES[name] || name; }
+
+        // openssl 3.x prints "C=DE, ST=..., CN=..."; multi-valued RDNs join with " + ".
+        function fmtDN(rdnArray) {
+            if (!rdnArray) return '';
+            return rdnArray.map(rdn =>
+                rdn.map(a => a.type + '=' + a.value).join(' + ')
+            ).join(', ');
+        }
+
+        // "260906045755Z" (UTCTime) or "20260906045755Z" (GeneralizedTime)
+        // -> "Sep  6 04:57:55 2026 GMT"
+        function parseAsn1Time(t) {
+            let s = String(t).replace(/Z$/, '');
+            let year, rest;
+            if (s.length === 12 || s.length === 10) {
+                const y = parseInt(s.slice(0, 2), 10);
+                year = y < 50 ? 2000 + y : 1900 + y;
+                rest = s.slice(2);
+            } else {
+                year = parseInt(s.slice(0, 4), 10);
+                rest = s.slice(4);
+            }
+            return {
+                year,
+                month: parseInt(rest.slice(0, 2), 10),
+                day:   parseInt(rest.slice(2, 4), 10),
+                hh:    rest.slice(4, 6) || '00',
+                mm:    rest.slice(6, 8) || '00',
+                ss:    rest.slice(8, 10) || '00',
+            };
+        }
+
+        function fmtDate(t) {
+            const d = parseAsn1Time(t);
+            return MONTHS[d.month - 1] + ' ' + String(d.day).padStart(2, ' ') + ' ' +
+                   d.hh + ':' + d.mm + ':' + d.ss + ' ' + d.year + ' GMT';
+        }
+
+        function toJsDate(t) {
+            const d = parseAsn1Time(t);
+            return new Date(Date.UTC(d.year, d.month - 1, d.day, +d.hh, +d.mm, +d.ss));
+        }
+
+        function hexToDecimal(hex) {
+            try { return BigInt('0x' + hex).toString(10); }
+            catch (e) { return parseInt(hex, 16).toString(10); }
+        }
+
+        // openssl prints short serials in decimal, long ones as an indented hex block.
+        function serialLines(hex, indent) {
+            // jsrsasign returns the INTEGER as encoded, so a positive value whose top
+            // bit is set carries a leading 00 pad byte. openssl prints the value, not
+            // its encoding, so drop that byte.
+            let h = hex;
+            if (h.length > 2 && h.slice(0, 2) === '00' && parseInt(h.slice(2, 4), 16) >= 0x80) {
+                h = h.slice(2);
+            }
+            if (h.length <= 16) {
+                const dec = hexToDecimal(h);
+                const short = h.replace(/^0+/, '') || '0';
+                return [pad(indent) + 'Serial Number: ' + dec + ' (0x' + short + ')'];
+            }
+            return [pad(indent) + 'Serial Number:', pad(indent + 4) + colonHex(h)];
+        }
+
+        // ── Certificate Transparency SCTs ──────────────────────────────────────
+        // RFC 6962 hides a TLS-encoded list inside the extension, which jsrsasign
+        // does not parse. openssl prints it in full, so parse it here rather than
+        // dropping a hex blob where a readable log list belongs.
+
+        const SCT_HASH_NAMES = { 1: 'MD5', 2: 'SHA1', 3: 'SHA224', 4: 'SHA256', 5: 'SHA384', 6: 'SHA512' };
+
+        function sctSigName(hash, sig) {
+            const h = SCT_HASH_NAMES[hash] || ('hash' + hash);
+            if (sig === 3) return 'ecdsa-with-' + h;
+            if (sig === 1) return h.toLowerCase() + 'WithRSAEncryption';
+            if (sig === 2) return 'dsa-with-' + h;
+            return h + '/sig' + sig;
+        }
+
+        function fmtSctTime(ms) {
+            const d = new Date(ms);
+            const p2 = n => String(n).padStart(2, '0');
+            return MONTHS[d.getUTCMonth()] + ' ' + String(d.getUTCDate()).padStart(2, ' ') + ' ' +
+                   p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes()) + ':' + p2(d.getUTCSeconds()) +
+                   '.' + String(d.getUTCMilliseconds()).padStart(3, '0') +
+                   ' ' + d.getUTCFullYear() + ' GMT';
+        }
+
+        function sctFieldLines(label, hex) {
+            const head = pad(4) + label.padEnd(10) + ': ';
+            return wrapHexLines(hex.toUpperCase(), 0, 16)
+                .map((l, i) => (i === 0 ? head : pad(16)) + l);
+        }
+
+        function parseSctList(hex) {
+            let h = hex;
+            // Depending on where the bytes came from this may still be wrapped in the
+            // inner DER OCTET STRING; unwrap only when the declared length disagrees.
+            if (parseInt(h.slice(0, 4), 16) !== (h.length / 2 - 2) && h.slice(0, 2) === '04') {
+                h = ASN1HEX.getV(h, 0);
+            }
+            const b = [];
+            for (let i = 0; i < h.length; i += 2) b.push(parseInt(h.substr(i, 2), 16));
+            const toHex = arr => arr.map(n => ('0' + n.toString(16)).slice(-2)).join('');
+
+            const out = [];
+            let p = 2;                                    // skip the 2-byte list length
+            while (p + 2 <= b.length) {
+                const len = (b[p] << 8) | b[p + 1];
+                p += 2;
+                const s = b.slice(p, p + len);
+                p += len;
+                if (s.length < 45) continue;              // too short to be an SCT
+
+                let q = 0;
+                const version = s[q]; q += 1;
+                const logId = s.slice(q, q + 32); q += 32;
+                let ts = 0;
+                for (let i = 0; i < 8; i++) ts = ts * 256 + s[q + i];
+                q += 8;
+                const extLen = (s[q] << 8) | s[q + 1]; q += 2;
+                const ext = s.slice(q, q + extLen); q += extLen;
+                const hash = s[q], sig = s[q + 1]; q += 2;
+                const sigLen = (s[q] << 8) | s[q + 1]; q += 2;
+                const sigBytes = s.slice(q, q + sigLen);
+
+                out.push('Signed Certificate Timestamp:');
+                out.push(pad(4) + 'Version   : v' + (version + 1) + ' (0x' + version.toString(16) + ')');
+                out.push(...sctFieldLines('Log ID', toHex(logId)));
+                out.push(pad(4) + 'Timestamp : ' + fmtSctTime(ts));
+                out.push(pad(4) + 'Extensions: ' + (extLen === 0 ? 'none' : colonHex(toHex(ext), true)));
+                out.push(pad(4) + 'Signature : ' + sctSigName(hash, sig));
+                out.push(...wrapHexLines(toHex(sigBytes).toUpperCase(), 16, 16));
+            }
+            return out;
+        }
+
+        // The raw extnValue octets for an extension, for anything jsrsasign leaves
+        // unparsed. Returns null when the extension is absent or unreadable.
+        function rawExtValueHex(x, oidOrName) {
+            try {
+                const info = x.getExtInfo(oidOrName);
+                if (!info) return null;
+                return ASN1HEX.getV(x.hex, info.vidx);
+            } catch (e) { return null; }
+        }
+
+        // ── Public key ─────────────────────────────────────────────────────────
+
+        function pubKeyLines(key, spkiHex) {
+            const L = [];
+            if (key && key.n && key.e !== undefined) {           // RSA
+                let nHex = key.n.toString(16);
+                if (nHex.length % 2) nHex = '0' + nHex;
+                // openssl shows the INTEGER as encoded, so a leading 00 appears
+                // whenever the high bit of the first byte is set.
+                if (parseInt(nHex.slice(0, 2), 16) >= 0x80) nHex = '00' + nHex;
+                L.push(pad(12) + 'Public Key Algorithm: rsaEncryption');
+                L.push(pad(16) + 'Public-Key: (' + key.n.bitLength() + ' bit)');
+                L.push(pad(16) + 'Modulus:');
+                L.push(...wrapHexLines(nHex, 20, 15));
+                L.push(pad(16) + 'Exponent: ' + key.e.toString() + ' (0x' + key.e.toString(16) + ')');
+                return L;
+            }
+            if (key && key.curveName) {                          // EC
+                const c = key.curveName;
+                const pubHex = key.pubKeyHex || '';
+                const bits = CURVE_BITS[c] || ((pubHex.length - 2) / 4) * 8;
+                L.push(pad(12) + 'Public Key Algorithm: id-ecPublicKey');
+                L.push(pad(16) + 'Public-Key: (' + bits + ' bit)');
+                L.push(pad(16) + 'pub:');
+                L.push(...wrapHexLines(pubHex, 20, 15));
+                L.push(pad(16) + 'ASN1 OID: ' + (CURVE_OID_NAMES[c] || c));
+                if (CURVE_NIST_NAMES[c]) L.push(pad(16) + 'NIST CURVE: ' + CURVE_NIST_NAMES[c]);
+                return L;
+            }
+            // Anything jsrsasign cannot turn into a key object (Ed25519, DSA, ...):
+            // print the SubjectPublicKeyInfo verbatim rather than lying about it.
+            L.push(pad(12) + 'Public Key Algorithm: <not decoded by this tool>');
+            if (spkiHex) {
+                L.push(pad(16) + 'SubjectPublicKeyInfo:');
+                L.push(...wrapHexLines(spkiHex, 20, 15));
+            }
+            return L;
+        }
+
+        // ── Extensions ─────────────────────────────────────────────────────────
+
+        function fmtGeneralName(g) {
+            if (g.dns)    return 'DNS:' + g.dns;
+            if (g.ip)     return 'IP Address:' + g.ip;
+            if (g.rfc822) return 'email:' + g.rfc822;
+            if (g.uri)    return 'URI:' + g.uri;
+            if (g.dn)     return 'DirName:' + (typeof g.dn === 'string' ? g.dn : fmtDN(g.dn.array));
+            if (g.other)  return 'othername:' + (g.other.oid || '<unsupported>');
+            return JSON.stringify(g);
+        }
+
+        // Returns the value lines for one extension, WITHOUT indentation.
+        function extValueLines(e, x) {
+            switch (e.extname) {
+                case 'basicConstraints': {
+                    let s = 'CA:' + (e.cA ? 'TRUE' : 'FALSE');
+                    if (e.pathLen !== undefined) s += ', pathlen:' + e.pathLen;
+                    return [s];
+                }
+                case 'keyUsage':
+                    return [(e.names || []).map(n => KEYUSAGE_NAMES[n] || n).join(', ')];
+                case 'extKeyUsage':
+                    return [(e.array || []).map(n => EKU_NAMES[n] || n).join(', ')];
+                case 'subjectAltName':
+                case 'issuerAltName':
+                    return [(e.array || []).map(fmtGeneralName).join(', ')];
+                case 'subjectKeyIdentifier':
+                    return [colonHex(e.kid ? e.kid.hex : '', true)];
+                case 'authorityKeyIdentifier': {
+                    const out = [];
+                    if (e.kid) out.push(colonHex(e.kid.hex, true));
+                    if (e.issuer) out.push('DirName:' + fmtDN(e.issuer.array));
+                    if (e.sn) out.push('serial:' + colonHex(e.sn.hex, true));
+                    return out.length ? out : ['<empty>'];
+                }
+                case 'certificatePolicies': {
+                    const out = [];
+                    (e.array || []).forEach(p => {
+                        out.push('Policy: ' + p.policyoid);
+                        (p.array || []).forEach(q => {
+                            if (q.cps) out.push('  CPS: ' + q.cps);
+                            if (q.unotice) out.push('  User Notice:');
+                        });
+                    });
+                    return out;
+                }
+                case 'cRLDistributionPoints':
+                case 'freshestCRL': {
+                    const out = [];
+                    (e.array || []).forEach(dp => {
+                        const full = dp.dpname && dp.dpname.full;
+                        out.push('Full Name:');
+                        (full || []).forEach(g => out.push('  ' + fmtGeneralName(g)));
+                        out.push('');   // openssl leaves a blank line after each DP
+                    });
+                    return out;
+                }
+                case 'authorityInfoAccess': {
+                    const out = [];
+                    (e.array || []).forEach(a => {
+                        if (a.ocsp)     out.push('OCSP - URI:' + a.ocsp);
+                        if (a.caissuer) out.push('CA Issuers - URI:' + a.caissuer);
+                    });
+                    return out;
+                }
+                case 'cRLNumber':
+                    return [hexToDecimal(e.num ? e.num.hex : '0')];
+                case 'ocspNoCheck':
+                    return ['NULL'];
+                case 'inhibitAnyPolicy':
+                    return [String(e.skipcerts !== undefined ? e.skipcerts : '')];
+                case 'nameConstraints': {
+                    const out = [];
+                    ['permit', 'exclude'].forEach(k => {
+                        if (!e[k]) return;
+                        out.push(k === 'permit' ? 'Permitted:' : 'Excluded:');
+                        e[k].forEach(g => out.push('  ' + fmtGeneralName(g.base || g)));
+                    });
+                    return out;
+                }
+                default: {
+                    const raw = x ? rawExtValueHex(x, e.extname) : null;
+                    if (e.extname === '1.3.6.1.4.1.11129.2.4.2' && raw) {
+                        const sct = parseSctList(raw);
+                        if (sct.length) return sct;
+                    }
+                    // Unknown OID: dump the raw value, the honest fallback when
+                    // there is no printer for it.
+                    if (raw) return wrapHexLines(raw.toUpperCase(), 0, 16);
+                    const copy = Object.assign({}, e);
+                    delete copy.extname; delete copy.critical;
+                    return [JSON.stringify(copy)];
+                }
+            }
+        }
+
+        function extLines(extArray, headIndent, x) {
+            const L = [];
+            (extArray || []).forEach(e => {
+                const label = EXT_LABELS[e.extname] || e.extname;
+                // openssl emits "Name: critical" or "Name: " with a trailing space.
+                L.push(pad(headIndent) + label + ': ' + (e.critical ? 'critical' : ''));
+                let vals;
+                try { vals = extValueLines(e, x); }
+                catch (err) { vals = ['<could not be rendered: ' + err.message + '>']; }
+                vals.forEach(v => L.push(v === '' ? '' : pad(headIndent + 4) + v));
+            });
+            return L;
+        }
+
+        // ── Renderers ──────────────────────────────────────────────────────────
+
+        function renderCert(x) {
+            const p = x.getParam();
+            const L = [];
+            L.push('Certificate:');
+            L.push(pad(4) + 'Data:');
+            L.push(pad(8) + 'Version: ' + p.version + ' (0x' + (p.version - 1).toString(16) + ')');
+            L.push(...serialLines(p.serial.hex, 8));
+            L.push(pad(8) + 'Signature Algorithm: ' + osslSigAlg(p.sigalg));
+            L.push(pad(8) + 'Issuer: ' + fmtDN(p.issuer.array));
+            L.push(pad(8) + 'Validity');
+            L.push(pad(12) + 'Not Before: ' + fmtDate(p.notbefore));
+            L.push(pad(12) + 'Not After : ' + fmtDate(p.notafter));
+            L.push(pad(8) + 'Subject: ' + fmtDN(p.subject.array));
+            L.push(pad(8) + 'Subject Public Key Info:');
+            let key = null;
+            try { key = x.getPublicKey(); } catch (e) { /* unsupported algorithm */ }
+            let spki = '';
+            try { spki = x.getPublicKeyHex(); } catch (e) { /* ignore */ }
+            L.push(...pubKeyLines(key, spki));
+            if (p.ext && p.ext.length) {
+                L.push(pad(8) + 'X509v3 extensions:');
+                L.push(...extLines(p.ext, 12, x));
+            }
+            L.push(pad(4) + 'Signature Algorithm: ' + osslSigAlg(p.sigalg));
+            L.push(pad(4) + 'Signature Value:');
+            L.push(...wrapHexLines(x.getSignatureValueHex(), 8, 18));
+            return L.join('\n');
+        }
+
+        function renderCsr(p) {
+            const L = [];
+            L.push('Certificate Request:');
+            L.push(pad(4) + 'Data:');
+            L.push(pad(8) + 'Version: 1 (0x0)');
+            L.push(pad(8) + 'Subject: ' + fmtDN(p.subject.array));
+            L.push(pad(8) + 'Subject Public Key Info:');
+            let key = null;
+            try { key = KEYUTIL.getKey(p.sbjpubkey); } catch (e) { /* unsupported */ }
+            L.push(...pubKeyLines(key, ''));
+            L.push(pad(8) + 'Attributes:');
+            if (p.extreq && p.extreq.length) {
+                L.push(pad(12) + 'Requested Extensions:');
+                L.push(...extLines(p.extreq, 16));
+            } else {
+                L.push(pad(12) + '(none)');
+            }
+            L.push(pad(4) + 'Signature Algorithm: ' + osslSigAlg(p.sigalg));
+            L.push(pad(4) + 'Signature Value:');
+            L.push(...wrapHexLines(p.sighex, 8, 18));
+            return L.join('\n');
+        }
+
+        function renderCrl(crl) {
+            const p = crl.getParam();
+            const L = [];
+            L.push('Certificate Revocation List (CRL):');
+            L.push(pad(8) + 'Version ' + p.version + ' (0x' + (p.version - 1).toString(16) + ')');
+            L.push(pad(8) + 'Signature Algorithm: ' + osslSigAlg(p.sigalg));
+            L.push(pad(8) + 'Issuer: ' + fmtDN(p.issuer.array));
+            L.push(pad(8) + 'Last Update: ' + fmtDate(p.thisupdate));
+            L.push(pad(8) + (p.nextupdate ? 'Next Update: ' + fmtDate(p.nextupdate) : 'Next Update: NONE'));
+            if (p.ext && p.ext.length) {
+                L.push(pad(8) + 'CRL extensions:');
+                L.push(...extLines(p.ext, 12, crl));
+            }
+            const revoked = p.revcert || [];
+            if (revoked.length) {
+                L.push('Revoked Certificates:');
+                revoked.forEach(r => {
+                    L.push(pad(4) + 'Serial Number: ' + (r.sn ? hexToDecimal(r.sn.hex).toString() : '?'));
+                    L.push(pad(8) + 'Revocation Date: ' + fmtDate(r.date));
+                });
+            } else {
+                L.push('No Revoked Certificates.');
+            }
+            L.push(pad(4) + 'Signature Algorithm: ' + osslSigAlg(p.sigalg));
+            L.push(pad(4) + 'Signature Value:');
+            L.push(...wrapHexLines(p.sighex, 8, 18));
+            return L.join('\n');
+        }
+
+        // ── Input detection ────────────────────────────────────────────────────
+
+        const PEM_RE = /-----BEGIN ([A-Z0-9 #]+)-----([A-Za-z0-9+/=\s]+?)-----END \1-----/g;
+
+        function looksLikeText(uint8) {
+            const n = Math.min(uint8.length, 512);
+            for (let i = 0; i < n; i++) {
+                const b = uint8[i];
+                if (b === 9 || b === 10 || b === 13) continue;
+                if (b < 32 || b > 126) return false;
+            }
+            return true;
+        }
+
+        // Returns [{kind, hex}] for one blob of input. kind is one of
+        // 'cert' | 'csr' | 'crl' | 'p7' | 'p12'.
+        function extractFromText(text) {
+            const found = [];
+            PEM_RE.lastIndex = 0;
+            let m;
+            while ((m = PEM_RE.exec(text)) !== null) {
+                const label = m[1].trim();
+                const hex = b64tohex(m[2].replace(/\s+/g, ''));
+                if (/CERTIFICATE REQUEST/.test(label))      found.push({ kind: 'csr', hex, pem: m[0] });
+                else if (/CRL/.test(label))                 found.push({ kind: 'crl', hex, pem: m[0] });
+                else if (/PKCS7/.test(label))               found.push({ kind: 'p7',  hex });
+                else if (/CERTIFICATE/.test(label))         found.push({ kind: 'cert', hex });
+                else if (/PRIVATE KEY/.test(label))         { /* deliberately ignored */ }
+                else                                        found.push({ kind: 'der', hex });
+            }
+            if (found.length) return found;
+
+            // No armor: maybe a bare base64 blob out of a config file or an x5c entry.
+            const stripped = text.replace(/\s+/g, '');
+            if (stripped.length > 32 && /^[A-Za-z0-9+/=]+$/.test(stripped)) {
+                try { return [{ kind: 'der', hex: b64tohex(stripped) }]; } catch (e) { /* fall through */ }
+            }
+            return [];
+        }
+
+        // Sniff a DER blob by the OIDs that identify its container.
+        function sniffDer(hex) {
+            if (hex.indexOf('2a864886f70d010c') !== -1) return 'p12';  // 1.2.840.113549.1.12
+            if (hex.indexOf('2a864886f70d010702') !== -1) return 'p7'; // signedData
+            return 'der';
+        }
+
+        // ── Turning blobs into renderable items ────────────────────────────────
+
+        function certsFromForgeContainer(hex, kind, password) {
+            const bin = forge.util.hexToBytes(hex);
+            const asn1 = forge.asn1.fromDer(forge.util.createBuffer(bin));
+            let certs;
+            if (kind === 'p12') {
+                const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, password);
+                const bags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || [];
+                certs = bags.map(b => b.cert).filter(Boolean);
+            } else {
+                certs = forge.pkcs7.messageFromAsn1(asn1).certificates || [];
+            }
+            return certs.map(c =>
+                forge.util.bytesToHex(forge.asn1.toDer(forge.pki.certificateToAsn1(c)).getBytes())
+            );
+        }
+
+        // Build a renderable item from a DER hex blob. The PEM label (if there was
+        // one) only sets the order in which shapes are tried — a mislabelled or
+        // damaged blob still gets a plain error rather than a library stack trace.
+        function itemFromHex(hex, kindHint) {
+            const kind = (kindHint && kindHint !== 'der') ? kindHint : sniffDer(hex);
+
+            if (kind === 'p12') { pendingP12Hex = hex; throw new Error('__NEEDS_PASSWORD__'); }
+            if (kind === 'p7') return certsFromForgeContainer(hex, 'p7').map(h => itemFromHex(h, 'cert'));
+
+            const tryCert = () => {
+                const x = new X509();
+                x.readCertHex(hex);
+                x.getSubjectString();          // forces a parse, so damage surfaces here
+                return { kind: 'cert', hex, obj: x };
+            };
+            const tryCsr = () => {
+                const p = KJUR.asn1.csr.CSRUtil.getParam(hextopem(hex, 'CERTIFICATE REQUEST'));
+                if (!p || !p.subject) throw new Error('no subject');
+                return { kind: 'csr', hex, obj: p };
+            };
+            const tryCrl = () => {
+                const c = new X509CRL(hex);
+                c.getParam();
+                return { kind: 'crl', hex, obj: c };
+            };
+
+            const order = kind === 'csr' ? [tryCsr, tryCert, tryCrl]
+                        : kind === 'crl' ? [tryCrl, tryCert, tryCsr]
+                        :                  [tryCert, tryCsr, tryCrl];
+            for (let i = 0; i < order.length; i++) {
+                try { return order[i](); } catch (e) { /* try the next shape */ }
+            }
+            throw new Error('not a valid certificate, CSR or CRL — the data looks truncated or corrupted.');
+        }
+
+        function buildItems(blobs) {
+            const out = [];
+            blobs.forEach(b => {
+                const r = itemFromHex(b.hex, b.kind);
+                if (Array.isArray(r)) out.push(...r); else out.push(r);
+            });
+            return out;
+        }
+
+        // ── Chain roles ────────────────────────────────────────────────────────
+
+        // Label each certificate leaf / intermediate / root by following
+        // subject -> issuer links. If the links do not resolve, say nothing
+        // rather than guessing.
+        function assignRoles(list) {
+            const certs = list.filter(i => i.kind === 'cert');
+            if (certs.length < 2) {
+                certs.forEach(c => { c.label = ''; });
+                return;
+            }
+            const subjects = certs.map(c => c.obj.getSubjectString());
+            certs.forEach((c, i) => {
+                const issuer = c.obj.getIssuerString();
+                const selfSigned = issuer === subjects[i];
+                const isIssuerOfSomeone = certs.some((o, j) => j !== i && o.obj.getIssuerString() === subjects[i]);
+                if (selfSigned) c.label = 'root';
+                else if (isIssuerOfSomeone) c.label = 'intermediate';
+                else c.label = 'leaf';
+            });
+        }
+
+        // ── Summary panel ──────────────────────────────────────────────────────
+
+        function cnOf(dnString) {
+            const m = /\/CN=([^/]+)/.exec(dnString || '');
+            return m ? m[1] : (dnString || '').replace(/^\//, '');
+        }
+
+        function summaryRow(label, value, mono) {
+            const wrap = document.createElement('div');
+            wrap.className = 'flex flex-col sm:flex-row sm:gap-4';
+            const k = document.createElement('span');
+            k.className = 'text-sm text-gray-500 sm:w-44 shrink-0';
+            k.textContent = label;
+            const v = document.createElement('span');
+            v.className = 'text-sm text-gray-900 break-all' + (mono ? ' font-mono' : '');
+            v.textContent = value;
+            wrap.appendChild(k); wrap.appendChild(v);
+            return wrap;
+        }
+
+        function expiryState(x) {
+            const now = new Date();
+            const nb = toJsDate(x.getNotBefore());
+            const na = toJsDate(x.getNotAfter());
+            if (now < nb) return { type: 'warning', text: 'Not yet valid — starts ' + fmtDate(x.getNotBefore()) };
+            if (now > na) return { type: 'error', text: 'EXPIRED on ' + fmtDate(x.getNotAfter()) };
+            const days = Math.floor((na - now) / 86400000);
+            if (days <= 30) return { type: 'warning', text: 'Expires in ' + days + ' day' + (days === 1 ? '' : 's') + ' (' + fmtDate(x.getNotAfter()) + ')' };
+            return { type: 'success', text: 'Valid for ' + days + ' more days (until ' + fmtDate(x.getNotAfter()) + ')' };
+        }
+
+        function buildSummary(item, index, total) {
+            const box = document.createElement('div');
+            box.className = 'border border-gray-200 rounded-lg p-4 space-y-2';
+
+            const head = document.createElement('div');
+            head.className = 'flex flex-wrap items-center gap-2 mb-2';
+            const title = document.createElement('h3');
+            title.className = 'text-lg font-bold text-black';
+            const kindName = { cert: 'Certificate', csr: 'Certificate Signing Request', crl: 'Certificate Revocation List' }[item.kind];
+            title.textContent = (total > 1 ? '[' + (index + 1) + '/' + total + '] ' : '') + kindName;
+            head.appendChild(title);
+            if (item.label) {
+                const chip = document.createElement('span');
+                chip.className = 'px-2 py-0.5 rounded-full text-xs font-semibold bg-[#E6E6F8] text-[#17177B]';
+                chip.textContent = item.label;
+                head.appendChild(chip);
+            }
+            box.appendChild(head);
+
+            if (item.kind === 'cert') {
+                const x = item.obj;
+                const st = expiryState(x);
+                const banner = document.createElement('div');
+                banner.className = `p-3 rounded-lg border text-sm mb-3 ${STATUS_STYLES[st.type]}`;
+                banner.textContent = st.text;
+                box.appendChild(banner);
+
+                const p = x.getParam();
+                box.appendChild(summaryRow('Subject', fmtDN(p.subject.array)));
+                box.appendChild(summaryRow('Issuer', fmtDN(p.issuer.array)));
+                if (x.getSubjectString() === x.getIssuerString()) {
+                    box.appendChild(summaryRow('Self-signed', 'yes'));
+                }
+                const san = (p.ext || []).find(e => e.extname === 'subjectAltName');
+                if (san) box.appendChild(summaryRow('SANs', (san.array || []).map(fmtGeneralName).join(', ')));
+
+                let key = null;
+                try { key = x.getPublicKey(); } catch (e) { /* ignore */ }
+                if (key && key.n) box.appendChild(summaryRow('Key', 'RSA ' + key.n.bitLength() + ' bit'));
+                else if (key && key.curveName) box.appendChild(summaryRow('Key', 'EC ' + (CURVE_OID_NAMES[key.curveName] || key.curveName)));
+
+                box.appendChild(summaryRow('Signature algorithm', osslSigAlg(p.sigalg)));
+                box.appendChild(summaryRow('Serial', colonHex(p.serial.hex), true));
+                box.appendChild(summaryRow('SHA-256 fingerprint', colonHex(KJUR.crypto.Util.hashHex(item.hex, 'sha256'), true), true));
+                box.appendChild(summaryRow('SHA-1 fingerprint', colonHex(KJUR.crypto.Util.hashHex(item.hex, 'sha1'), true), true));
+            } else if (item.kind === 'csr') {
+                const p = item.obj;
+                box.appendChild(summaryRow('Subject', fmtDN(p.subject.array)));
+                const san = (p.extreq || []).find(e => e.extname === 'subjectAltName');
+                if (san) box.appendChild(summaryRow('Requested SANs', (san.array || []).map(fmtGeneralName).join(', ')));
+                box.appendChild(summaryRow('Signature algorithm', osslSigAlg(p.sigalg)));
+            } else {
+                const p = item.obj.getParam();
+                box.appendChild(summaryRow('Issuer', fmtDN(p.issuer.array)));
+                box.appendChild(summaryRow('Last update', fmtDate(p.thisupdate)));
+                if (p.nextupdate) box.appendChild(summaryRow('Next update', fmtDate(p.nextupdate)));
+                box.appendChild(summaryRow('Revoked entries', String((p.revcert || []).length)));
+            }
+            return box;
+        }
+
+        // ── Render ─────────────────────────────────────────────────────────────
+
+        function render() {
+            if (!items.length) {
+                summaryCard.classList.add('hidden');
+                outputCard.classList.add('hidden');
+                return;
+            }
+            assignRoles(items);
+
+            summaryBody.innerHTML = '';
+            items.forEach((it, i) => summaryBody.appendChild(buildSummary(it, i, items.length)));
+            summaryCard.classList.remove('hidden');
+
+            const blocks = items.map((it, i) => {
+                let text;
+                if (it.kind === 'cert')      text = renderCert(it.obj);
+                else if (it.kind === 'csr')  text = renderCsr(it.obj);
+                else                         text = renderCrl(it.obj);
+                if (items.length === 1) return text;
+                const tag = it.label ? ' ' + it.label + ':' : ':';
+                const who = it.kind === 'cert' ? it.obj.getSubjectString() : '';
+                return '=== [' + (i + 1) + '/' + items.length + ']' + tag + ' ' + who + ' ===\n' + text;
+            });
+            output.value = blocks.join('\n\n');
+            outputCard.classList.remove('hidden');
+        }
+
+        // ── Actions ────────────────────────────────────────────────────────────
+
+        function decodeInput() {
+            const text = certInput.value.trim();
+            if (!text) { showStatus('Nothing to decode — paste a certificate or drop a file.', 'warning'); return; }
+            handleBlobs(extractFromText(text), 'pasted input');
+        }
+
+        function handleBlobs(blobs, sourceName) {
+            if (!blobs.length) {
+                items = []; render();
+                showStatus('No PEM block or base64 data found in ' + sourceName + '.', 'error');
+                return;
+            }
+            try {
+                items = buildItems(blobs);
+                if (!items.length) throw new Error('The container held no certificates.');
+                hideStatus();
+                passwordRow.classList.add('hidden');
+                render();
+                showStatus('Decoded ' + items.length + ' object' + (items.length === 1 ? '' : 's') + '.', 'success');
+            } catch (e) {
+                if (e.message === '__NEEDS_PASSWORD__') {
+                    passwordRow.classList.remove('hidden');
+                    p12Password.focus();
+                    showStatus('PKCS#12 container detected — enter its password to unlock it.', 'info');
+                    return;
+                }
+                items = []; render();
+                showStatus('Could not parse ' + sourceName + ': ' + e.message, 'error');
+            }
+        }
+
+        function unlockP12() {
+            if (!pendingP12Hex) return;
+            try {
+                const hexes = certsFromForgeContainer(pendingP12Hex, 'p12', p12Password.value);
+                if (!hexes.length) throw new Error('the container holds no certificates.');
+                items = hexes.map(h => itemFromHex(h, 'cert'));
+                passwordRow.classList.add('hidden');
+                p12Password.value = '';
+                pendingP12Hex = null;
+                render();
+                showStatus('Unlocked — decoded ' + items.length + ' certificate' + (items.length === 1 ? '' : 's') + '.', 'success');
+            } catch (e) {
+                showStatus('Could not open the PKCS#12 container: ' + e.message, 'error');
+            }
+        }
+
+        function readFiles(fileList) {
+            const files = Array.from(fileList || []);
+            if (!files.length) return;
+            const readers = files.map(f => new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve({ name: f.name, buf: r.result });
+                r.onerror = () => reject(new Error('could not read ' + f.name));
+                r.readAsArrayBuffer(f);
+            }));
+            Promise.all(readers).then(results => {
+                const blobs = [];
+                results.forEach(res => {
+                    const bytes = new Uint8Array(res.buf);
+                    if (looksLikeText(bytes)) {
+                        const text = new TextDecoder().decode(bytes);
+                        const found = extractFromText(text);
+                        if (found.length) { blobs.push(...found); return; }
+                    }
+                    blobs.push({ kind: 'der', hex: bytesToHex(bytes) });
+                });
+                const label = results.length === 1 ? results[0].name : results.length + ' files';
+                handleBlobs(blobs, label);
+            }).catch(e => showStatus(e.message, 'error'));
+        }
+
+        function clearAll() {
+            certInput.value = '';
+            certFile.value = '';
+            p12Password.value = '';
+            pendingP12Hex = null;
+            items = [];
+            passwordRow.classList.add('hidden');
+            hideStatus();
+            render();
+        }
+
+        function copyOutput(btn) {
+            const text = output.value;
+            if (!text) return;
+            const tmp = document.createElement('textarea');
+            tmp.value = text;
+            tmp.style.position = 'absolute';
+            tmp.style.left = '-9999px';
+            document.body.appendChild(tmp);
+            tmp.select();
+            const original = btn.innerHTML;
+            try {
+                document.execCommand('copy');
+                btn.textContent = 'Copied!';
+            } catch (e) {
+                btn.textContent = 'Failed';
+            } finally {
+                document.body.removeChild(tmp);
+                setTimeout(() => { btn.innerHTML = original; }, 2000);
+            }
+        }
+
+        // ── Boot ───────────────────────────────────────────────────────────────
+
+        certFile.addEventListener('change', e => readFiles(e.target.files));
+
+        certInput.addEventListener('input', () => {
+            // Decoding on every keystroke is wasteful for a multi-KB paste, but a
+            // paste arrives as a single input event, so this feels instant.
+            if (certInput.value.trim()) decodeInput(); else clearAll();
+        });
+
+        inputCard.addEventListener('dragover', e => {
+            e.preventDefault();
+            inputCard.classList.add('drag-over');
+        });
+        inputCard.addEventListener('dragleave', e => {
+            if (!inputCard.contains(e.relatedTarget)) inputCard.classList.remove('drag-over');
+        });
+        inputCard.addEventListener('drop', e => {
+            e.preventDefault();
+            inputCard.classList.remove('drag-over');
+            if (e.dataTransfer.files && e.dataTransfer.files.length) readFiles(e.dataTransfer.files);
+        });
+
+        p12Password.addEventListener('keydown', e => { if (e.key === 'Enter') unlockP12(); });
+    </script>
+</body>
+</html>

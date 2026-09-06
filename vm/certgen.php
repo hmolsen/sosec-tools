@@ -1,3 +1,104 @@
+<?php
+// ── Read the certificates currently sitting in certs/ ──────────────────────
+// These are exactly what certs.tar ships to the VMs, so this is the state the
+// training machines are running with right now.
+
+$certDir    = __DIR__ . '/certs';
+$certs      = [];
+$certsError = null;
+
+function read_leaf_cert($path)
+{
+    $pem = @file_get_contents($path);
+    if ($pem === false) {
+        return ['error' => 'unreadable'];
+    }
+
+    // A fullchain holds leaf + intermediates; the leaf is the first block.
+    if (!preg_match_all('/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/s', $pem, $m)) {
+        return ['error' => 'no PEM certificate block found'];
+    }
+
+    $info = @openssl_x509_parse($m[0][0]);
+    if ($info === false) {
+        return ['error' => 'could not be parsed'];
+    }
+
+    $from = isset($info['validFrom_time_t']) ? $info['validFrom_time_t'] : null;
+    $to   = isset($info['validTo_time_t'])   ? $info['validTo_time_t']   : null;
+    $days = $to !== null ? (int) floor(($to - time()) / 86400) : null;
+
+    $sans = '';
+    if (!empty($info['extensions']['subjectAltName'])) {
+        $sans = trim(str_replace('DNS:', '', $info['extensions']['subjectAltName']));
+    }
+
+    if ($days === null)   { $state = 'info';    $label = 'Unknown'; }
+    elseif ($days < 0)    { $state = 'error';   $label = 'Expired'; }
+    elseif ($days < 30)   { $state = 'warning'; $label = 'Expires soon'; }
+    else                  { $state = 'success'; $label = 'Valid'; }
+
+    return [
+        'cn'        => isset($info['subject']['CN']) ? $info['subject']['CN'] : basename($path, '.fullchain.pem'),
+        'sans'      => $sans,
+        'issuer'    => isset($info['issuer']['CN']) ? $info['issuer']['CN'] : '—',
+        'serial'    => isset($info['serialNumberHex']) ? $info['serialNumberHex'] : (isset($info['serialNumber']) ? $info['serialNumber'] : '—'),
+        'from'      => $from,
+        'to'        => $to,
+        'days'      => $days,
+        'chain_len' => count($m[0]),
+        'has_key'   => is_file(preg_replace('/\.fullchain\.pem$/', '.private_key.pem', $path)),
+        'mtime'     => @filemtime($path),
+        'state'     => $state,
+        'label'     => $label,
+    ];
+}
+
+if (!function_exists('openssl_x509_parse')) {
+    $certsError = 'PHP ext-openssl is not loaded on this host, so the certificates cannot be read.';
+} elseif (!is_dir($certDir)) {
+    $certsError = 'No certs/ directory on this host yet — nothing has been issued.';
+} else {
+    $files = glob($certDir . '/*.fullchain.pem');
+    sort($files);
+    foreach ($files as $f) {
+        $certs[] = read_leaf_cert($f) + ['file' => basename($f)];
+    }
+    if (!$certs) {
+        $certsError = 'certs/ is empty — no certificate has been issued yet.';
+    }
+}
+
+// The tarball is what the VMs actually download at boot.
+$tarPath = __DIR__ . '/certs.tar';
+$tarTime = is_file($tarPath) ? filemtime($tarPath) : null;
+$tarSize = is_file($tarPath) ? filesize($tarPath) : null;
+
+// A run aborts early while any existing certificate still has >80 days left.
+$guardBlocks = false;
+foreach ($certs as $c) {
+    if ($c && empty($c['error']) && $c['days'] !== null && $c['days'] > 80) {
+        $guardBlocks = true;
+    }
+}
+
+$STATE_CLASSES = [
+    'success' => 'bg-[#E6F3E6] text-[#177B17] border-[#177B17]',
+    'error'   => 'bg-[#F8E6E6] text-[#7B1717] border-[#7B1717]',
+    'warning' => 'bg-[#FFFDE6] text-[#DFDF17] border-[#DFDF17]',
+    'info'    => 'bg-[#E6E6F8] text-[#17177B] border-[#17177B]',
+];
+
+function fmt_ts($ts)
+{
+    return $ts ? gmdate('Y-m-d H:i', $ts) . ' UTC' : '—';
+}
+
+function e($s)
+{
+    return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,6 +138,125 @@
     </header>
 
     <main class="max-w-4xl mx-auto space-y-6">
+
+        <!-- ══ Currently distributed certificates ════════════════════════════ -->
+        <div class="bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+            <div class="flex items-center justify-between gap-3 mb-6 border-b pb-2">
+                <h2 class="text-2xl font-bold text-black">Currently Distributed</h2>
+                <button type="button" id="reloadBtn"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:border-gray-400 hover:bg-gray-50 transition duration-150">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+
+<?php if ($certsError): ?>
+            <div class="p-3 rounded-lg border text-sm <?= $STATE_CLASSES['warning'] ?>">
+                <?= e($certsError) ?>
+            </div>
+<?php else: ?>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<?php foreach ($certs as $c): ?>
+                <div class="border border-gray-200 rounded-lg p-5">
+<?php if (!empty($c['error'])): ?>
+                    <h3 class="text-lg font-bold text-black mb-2 font-mono"><?= e($c['file']) ?></h3>
+                    <div class="p-3 rounded-lg border text-sm <?= $STATE_CLASSES['error'] ?>">
+                        This certificate <?= e($c['error']) ?>.
+                    </div>
+<?php else: ?>
+                    <div class="flex items-start justify-between gap-3 mb-4">
+                        <div>
+                            <h3 class="text-lg font-bold text-black font-mono"><?= e($c['cn']) ?></h3>
+<?php if ($c['sans'] && $c['sans'] !== $c['cn']): ?>
+                            <p class="text-xs text-gray-400 font-mono mt-0.5"><?= e($c['sans']) ?></p>
+<?php endif; ?>
+                        </div>
+                        <span class="shrink-0 px-2.5 py-1 rounded-lg border text-xs font-semibold <?= $STATE_CLASSES[$c['state']] ?>">
+                            <?= e($c['label']) ?>
+                        </span>
+                    </div>
+
+                    <dl class="text-sm space-y-1.5">
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-gray-500">Issued</dt>
+                            <dd class="font-mono text-gray-900 text-right"><?= e(fmt_ts($c['from'])) ?></dd>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-gray-500">Expires</dt>
+                            <dd class="font-mono text-gray-900 text-right"><?= e(fmt_ts($c['to'])) ?></dd>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-gray-500">Remaining</dt>
+                            <dd class="font-mono text-right <?= ($c['days'] !== null && $c['days'] < 0) ? 'text-[#7B1717] font-semibold' : 'text-gray-900' ?>">
+<?php if ($c['days'] === null): ?>
+                                &mdash;
+<?php elseif ($c['days'] < 0): ?>
+                                <?= e(abs($c['days'])) ?> day<?= abs($c['days']) === 1 ? '' : 's' ?> overdue
+<?php else: ?>
+                                <?= e($c['days']) ?> day<?= $c['days'] === 1 ? '' : 's' ?>
+<?php endif; ?>
+                            </dd>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-gray-500">Issuer</dt>
+                            <dd class="font-mono text-gray-900 text-right truncate" title="<?= e($c['issuer']) ?>"><?= e($c['issuer']) ?></dd>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-gray-500">Serial</dt>
+                            <dd class="font-mono text-gray-900 text-right truncate" title="<?= e($c['serial']) ?>"><?= e($c['serial']) ?></dd>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-gray-500">Chain</dt>
+                            <dd class="font-mono text-gray-900 text-right"><?= e($c['chain_len']) ?> certs</dd>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-gray-500">Private key</dt>
+                            <dd class="font-mono text-right <?= $c['has_key'] ? 'text-[#177B17]' : 'text-[#7B1717] font-semibold' ?>">
+                                <?= $c['has_key'] ? 'present' : 'MISSING' ?>
+                            </dd>
+                        </div>
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-gray-500">File written</dt>
+                            <dd class="font-mono text-gray-900 text-right"><?= e(fmt_ts($c['mtime'])) ?></dd>
+                        </div>
+                    </dl>
+<?php endif; ?>
+                </div>
+<?php endforeach; ?>
+            </div>
+<?php endif; ?>
+
+            <div class="mt-6 pt-4 border-t text-sm flex flex-wrap justify-between gap-x-6 gap-y-2">
+                <span class="text-gray-500">
+                    Bundle <code class="font-mono">certs.tar</code>
+<?php if ($tarTime): ?>
+                    built <span class="font-mono text-gray-900"><?= e(fmt_ts($tarTime)) ?></span>
+                    <span class="text-gray-400">(<?= e(number_format($tarSize / 1024, 1)) ?> KB)</span>
+<?php else: ?>
+                    <span class="text-[#7B1717] font-semibold">has not been built yet</span>
+<?php endif; ?>
+                </span>
+<?php if ($tarTime && !empty($certs)): ?>
+<?php
+    $newest = 0;
+    foreach ($certs as $c) { if (!empty($c['mtime']) && $c['mtime'] > $newest) $newest = $c['mtime']; }
+?>
+<?php if ($newest > $tarTime): ?>
+                <span class="text-[#7B1717] font-semibold">Stale — a certificate is newer than the bundle.</span>
+<?php endif; ?>
+<?php endif; ?>
+            </div>
+
+<?php if ($guardBlocks): ?>
+            <div class="mt-4 p-3 rounded-lg border text-sm <?= $STATE_CLASSES['warning'] ?>">
+                A certificate still has more than 80 days left, so a run will stop at the renewal guard without
+                reissuing anything or rebuilding <code class="font-mono">certs.tar</code>. Move the existing
+                <code class="font-mono">certs/*.fullchain.pem</code> aside to force a reissue.
+            </div>
+<?php endif; ?>
+        </div>
 
         <!-- ══ Credentials ═══════════════════════════════════════════════════ -->
         <div class="bg-white p-6 md:p-8 rounded-xl shadow-2xl">
@@ -148,6 +368,7 @@
         const logCard     = document.getElementById('logCard');
         const logBox      = document.getElementById('logBox');
         const copyLog     = document.getElementById('copyLog');
+        const reloadBtn   = document.getElementById('reloadBtn');
 
         const STATUS_STYLES = {
             success: 'bg-[#E6F3E6] text-[#177B17] border-[#177B17]',
@@ -202,6 +423,11 @@
         }
 
         // ── Actions ────────────────────────────────────────────────────────────
+        reloadBtn.addEventListener('click', () => {
+            if (running) return;
+            location.reload();
+        });
+
         togglePw.addEventListener('click', () => {
             passwordEl.type = passwordEl.type === 'password' ? 'text' : 'password';
             passwordEl.focus();
@@ -280,7 +506,7 @@
                 appendLines([buffer]);
 
                 if (/smoooooothly/i.test(full)) {
-                    showStatus('Done — certs.tar has been rebuilt. The VMs will pick it up on next boot.', 'success');
+                    showStatus('Done — certs.tar has been rebuilt. The VMs will pick it up on next boot. Hit Refresh above to re-read the new certificate details.', 'success');
                 } else if (/still good/i.test(full)) {
                     showStatus('Nothing to do: an existing certificate still has more than 80 days left, so the run stopped early and certs.tar was not rebuilt.', 'warning');
                 } else if (/fehler|exception/i.test(full)) {
