@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7B1717">
+    <title>Software Security – Timer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preload" href="/commons/fonts/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B4gaVI.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/commons/style.css">
+    <style>
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { opacity: 1; }
+
+        @keyframes alarm-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(123, 23, 23, 0); }
+            50%      { box-shadow: 0 0 0 18px rgba(123, 23, 23, 0.35); }
+        }
+        .alarm-flash { animation: alarm-pulse 1s ease-in-out infinite; }
+        .alarm-text  { animation: alarm-text-blink 1s steps(1) infinite; }
+        @keyframes alarm-text-blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0.35; }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <!-- ══ EDIT WRAP — hidden in present mode ══════════════════════════════ -->
+    <div id="editWrap">
+
+        <nav class="mb-6">
+            <a href="/" class="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[#7B1717] transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+                All Tools
+            </a>
+        </nav>
+
+        <header class="text-center mb-10">
+            <img src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" class="mx-auto h-20 mb-4 rounded-lg" />
+            <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Timer</h1>
+            <p class="text-xl text-gray-500">Configure a countdown and run it fullscreen</p>
+        </header>
+
+        <main class="max-w-2xl mx-auto space-y-6">
+
+            <!-- Toast notification -->
+            <div id="toast" class="fixed top-6 right-6 z-40 hidden px-5 py-3 rounded-lg shadow-xl border text-sm font-medium max-w-xs pointer-events-none"></div>
+
+            <!-- Setup card -->
+            <div class="bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+                <h2 class="text-2xl font-bold text-black mb-6 border-b pb-2">Set Timer</h2>
+
+                <p class="text-sm font-medium text-gray-700 mb-2">Quick start</p>
+                <div class="flex flex-wrap gap-2 mb-8">
+                    <button onclick="startTimer(120)"  class="preset-btn">2 min</button>
+                    <button onclick="startTimer(180)"  class="preset-btn">3 min</button>
+                    <button onclick="startTimer(300)"  class="preset-btn">5 min</button>
+                    <button onclick="startTimer(600)"  class="preset-btn">10 min</button>
+                    <button onclick="startTimer(900)"  class="preset-btn">15 min</button>
+                    <button onclick="startTimer(1200)" class="preset-btn">20 min</button>
+                    <button onclick="startTimer(1800)" class="preset-btn">30 min</button>
+                </div>
+
+                <p class="text-sm font-medium text-gray-700 mb-2">Custom time</p>
+                <div class="flex flex-wrap items-end gap-3">
+                    <div>
+                        <label for="hoursInput" class="block text-xs text-gray-500 mb-1">Hours</label>
+                        <input type="number" id="hoursInput" min="0" max="23" value="0"
+                            class="w-20 p-2 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm bg-[#E7E6E6] text-center text-xl font-bold">
+                    </div>
+                    <div>
+                        <label for="minutesInput" class="block text-xs text-gray-500 mb-1">Minutes</label>
+                        <input type="number" id="minutesInput" min="0" max="59" value="5"
+                            class="w-20 p-2 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm bg-[#E7E6E6] text-center text-xl font-bold">
+                    </div>
+                    <div>
+                        <label for="secondsInput" class="block text-xs text-gray-500 mb-1">Seconds</label>
+                        <input type="number" id="secondsInput" min="0" max="59" value="0"
+                            class="w-20 p-2 border border-gray-300 rounded-lg focus:ring-[#17177B] focus:border-[#17177B] transition shadow-sm bg-[#E7E6E6] text-center text-xl font-bold">
+                    </div>
+                    <button onclick="startCustom()"
+                        class="px-4 py-3 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-[#7B1717] focus:ring-offset-2">
+                        Start Timer
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status card -->
+            <div id="statusCard" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-2xl text-center transition-shadow duration-150">
+                <p id="statusLabel" class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Running</p>
+                <div id="miniDisplay" class="text-6xl font-black text-[#7B1717] tabular-nums mb-5">05:00</div>
+
+                <div class="w-full bg-[#E7E6E6] rounded-full h-2 mb-6 overflow-hidden">
+                    <div id="miniProgress" class="h-2 bg-[#7B1717] transition-all duration-200 ease-linear" style="width:0%"></div>
+                </div>
+
+                <div class="flex flex-wrap justify-center gap-3">
+                    <button id="pauseResumeBtn" onclick="togglePause()"
+                        class="px-4 py-2 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:border-gray-400 hover:bg-gray-50 transition duration-150 disabled:opacity-40 disabled:cursor-not-allowed">
+                        Pause
+                    </button>
+                    <button id="addMinuteBtn" onclick="addMinute()"
+                        class="px-4 py-2 bg-[#7B1717] text-white font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow-md disabled:opacity-40 disabled:cursor-not-allowed">
+                        +1 Min
+                    </button>
+                    <button id="stopBtn" onclick="stopTimer()"
+                        class="px-4 py-2 border-2 border-[#7B1717] text-[#7B1717] font-semibold rounded-lg hover:bg-[#F8E6E6] transition duration-150">
+                        Stop
+                    </button>
+                </div>
+
+                <div class="mt-6 pt-5 border-t border-gray-200 flex items-center justify-center gap-2">
+                    <button onclick="window.location.href='?view=present'"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-[#7B1717] text-white text-sm font-semibold rounded-lg hover:bg-[#C05C5C] transition duration-150 shadow">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                        </svg>
+                        Present
+                    </button>
+                    <a href="?view=present" target="_blank"
+                        class="p-2 text-gray-400 hover:text-[#7B1717] rounded-lg hover:bg-[#F8E6E6] transition-colors"
+                        title="Open in new tab">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                        </svg>
+                    </a>
+                </div>
+            </div>
+
+        </main>
+
+        <footer class="mt-12 py-6 text-center text-sm text-gray-500">
+            <p class="mb-2">&copy; 2026 Software Security</p>
+            <ul class="flex justify-center gap-6 list-none p-0">
+                <li><a href="https://hannesmolsen.de/impressum.html" class="hover:underline">Impressum</a></li>
+                <li><a href="https://hannesmolsen.de/datenschutz.html" class="hover:underline">Datenschutz</a></li>
+                <li><a href="https://hannesmolsen.de" class="hover:underline">Hannes Molsen</a></li>
+            </ul>
+        </footer>
+
+    </div><!-- /editWrap -->
+
+    <!-- ══ PRESENT WRAP — fixed overlay, shown via ?view=present ═══════════ -->
+    <div id="presentWrap" style="display:none; position:fixed; inset:0; z-index:50; flex-direction:column; background:#E7E6E6; overflow:auto; padding:1.5rem; gap:1rem; font-family:'Open Sans',sans-serif;">
+
+        <!-- Present header -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:1rem; border-bottom:1px solid rgba(0,0,0,0.1); flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:1rem;">
+                <img src="https://hannesmolsen.de/images/software-security_logo.png" alt="Software Security" style="height:2.5rem; border-radius:0.5rem;">
+                <div>
+                    <p style="color:#6B7280; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; margin:0;">Timer</p>
+                    <p id="presentSubtitle" style="color:#374151; font-size:0.85rem; margin:0;"></p>
+                </div>
+            </div>
+            <a href="?"
+                style="display:inline-flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem; border:1px solid rgba(0,0,0,0.15); color:#374151; font-size:0.875rem; font-weight:500; border-radius:0.5rem; text-decoration:none; transition:background 0.15s;"
+                onmouseover="this.style.background='rgba(0,0,0,0.05)'; this.style.color='#111827';"
+                onmouseout="this.style.background='transparent'; this.style.color='#374151';">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 9l-6 6m0 0l6 6m-6-6h16" />
+                </svg>
+                Back to Setup
+            </a>
+        </div>
+
+        <!-- Present body (populated by renderPresent) -->
+        <div id="presentBody" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2.5rem; text-align:center; border-radius:1.5rem; transition:box-shadow 0.15s;">
+            <p id="presentEmpty" style="display:none; color:#9CA3AF; font-size:1.25rem;">No timer running. Go back to Setup.</p>
+
+            <div id="presentTimerBox" style="display:none; flex-direction:column; align-items:center; gap:2.5rem; width:100%;">
+                <div id="presentStatusLabel" style="color:#7B1717; font-weight:800; font-size:1.1rem; text-transform:uppercase; letter-spacing:0.15em;"></div>
+                <div id="presentDisplay" style="font-size:clamp(4rem, 18vw, 13rem); font-weight:800; font-variant-numeric:tabular-nums; color:#7B1717; line-height:1;">00:00</div>
+
+                <div style="width:100%; max-width:700px; background:#ffffff; border-radius:9999px; height:16px; overflow:hidden; box-shadow:inset 0 1px 3px rgba(0,0,0,0.15);">
+                    <div id="presentProgress" style="height:100%; background:#7B1717; width:0%; transition:width 0.2s linear;"></div>
+                </div>
+
+                <div style="display:flex; gap:1rem; flex-wrap:wrap; justify-content:center;">
+                    <button id="presentPauseBtn" onclick="togglePause()"
+                        style="padding:1rem 2rem; font-size:1.1rem; font-weight:700; border-radius:0.75rem; border:2px solid #9CA3AF; color:#374151; background:#fff; cursor:pointer; transition:background 0.15s;">
+                        Pause
+                    </button>
+                    <button id="presentAddMinuteBtn" onclick="addMinute()"
+                        style="padding:1rem 2rem; font-size:1.1rem; font-weight:700; border-radius:0.75rem; border:none; color:#fff; background:#7B1717; cursor:pointer; box-shadow:0 4px 10px rgba(123,23,23,0.35); transition:background 0.15s;">
+                        +1 Min
+                    </button>
+                    <button id="presentStopBtn" onclick="stopTimer()"
+                        style="padding:1rem 2rem; font-size:1.1rem; font-weight:700; border-radius:0.75rem; border:2px solid #7B1717; color:#7B1717; background:#fff; cursor:pointer; transition:background 0.15s;">
+                        Stop
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /presentWrap -->
+
+    <script>
+        // ── URL mode detection ─────────────────────────────────────────────────
+        const PRESENT = new URLSearchParams(location.search).get('view') === 'present';
+
+        // ── State ──────────────────────────────────────────────────────────────
+        const STORAGE_KEY = 'ss-timer-tool';
+
+        // status: 'idle' | 'running' | 'paused' | 'done'
+        let state = {
+            status:      'idle',
+            endTime:     null, // epoch ms — valid while running
+            remainingMs: null, // valid while paused
+            durationMs:  0,    // total configured duration, for the progress bar
+        };
+
+        // ── DOM references ─────────────────────────────────────────────────────
+        const editWrap            = document.getElementById('editWrap');
+        const presentWrap         = document.getElementById('presentWrap');
+        const hoursInput          = document.getElementById('hoursInput');
+        const minutesInput        = document.getElementById('minutesInput');
+        const secondsInput        = document.getElementById('secondsInput');
+        const statusCard          = document.getElementById('statusCard');
+        const statusLabel         = document.getElementById('statusLabel');
+        const miniDisplay         = document.getElementById('miniDisplay');
+        const miniProgress        = document.getElementById('miniProgress');
+        const pauseResumeBtn      = document.getElementById('pauseResumeBtn');
+        const addMinuteBtn        = document.getElementById('addMinuteBtn');
+        const stopBtn             = document.getElementById('stopBtn');
+        const presentSubtitle     = document.getElementById('presentSubtitle');
+        const presentEmpty        = document.getElementById('presentEmpty');
+        const presentTimerBox     = document.getElementById('presentTimerBox');
+        const presentBody         = document.getElementById('presentBody');
+        const presentStatusLabel  = document.getElementById('presentStatusLabel');
+        const presentDisplay      = document.getElementById('presentDisplay');
+        const presentProgress     = document.getElementById('presentProgress');
+        const presentPauseBtn     = document.getElementById('presentPauseBtn');
+        const presentAddMinuteBtn = document.getElementById('presentAddMinuteBtn');
+        const presentStopBtn      = document.getElementById('presentStopBtn');
+        const toastEl              = document.getElementById('toast');
+
+        // ── Persistence ────────────────────────────────────────────────────────
+        function save() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function load() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                if (!parsed || typeof parsed.status !== 'string') return;
+                state = parsed;
+            } catch (_) { /* ignore corrupt data */ }
+        }
+
+        // ── Toast (edit mode only) ─────────────────────────────────────────────
+        const TOAST_STYLES = {
+            success: 'bg-[#E6F3E6] text-[#177B17] border-[#177B17]',
+            error:   'bg-[#F8E6E6] text-[#7B1717] border-[#7B1717]',
+            warning: 'bg-[#FFFDE6] text-[#DFDF17] border-[#DFDF17]',
+            info:    'bg-[#E6E6F8] text-[#17177B] border-[#17177B]',
+        };
+
+        function showToast(msg, type = 'info') {
+            if (!toastEl) return;
+            toastEl.className = `fixed top-6 right-6 z-50 px-5 py-3 rounded-lg shadow-xl border text-sm font-medium max-w-xs pointer-events-none ${TOAST_STYLES[type]}`;
+            toastEl.textContent = msg;
+            clearTimeout(toastEl._t);
+            toastEl._t = setTimeout(() => toastEl.classList.add('hidden'), 3500);
+        }
+
+        // ── Time helpers ───────────────────────────────────────────────────────
+        function formatTime(ms) {
+            const total = Math.max(0, Math.round(ms / 1000));
+            const h = Math.floor(total / 3600);
+            const m = Math.floor((total % 3600) / 60);
+            const s = total % 60;
+            const mm = String(m).padStart(2, '0');
+            const ss = String(s).padStart(2, '0');
+            return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+        }
+
+        function getRemainingMs() {
+            if (state.status === 'running') return Math.max(0, state.endTime - Date.now());
+            if (state.status === 'paused')  return state.remainingMs;
+            return 0;
+        }
+
+        function getProgressPercent() {
+            if (state.durationMs <= 0) return 0;
+            const pct = ((state.durationMs - getRemainingMs()) / state.durationMs) * 100;
+            return Math.min(100, Math.max(0, pct));
+        }
+
+        // ── Actions ────────────────────────────────────────────────────────────
+        function refresh() {
+            if (PRESENT) renderPresent(); else render();
+        }
+
+        function startTimer(seconds) {
+            seconds = Math.floor(seconds);
+            if (!seconds || seconds <= 0) {
+                showToast('Enter a time greater than zero.', 'warning');
+                return;
+            }
+            getAudioCtx(); // warm up audio on a real user gesture
+
+            state = {
+                status:      'running',
+                durationMs:  seconds * 1000,
+                endTime:     Date.now() + seconds * 1000,
+                remainingMs: null,
+            };
+            save();
+            refresh();
+        }
+
+        function startCustom() {
+            const h = parseInt(hoursInput.value, 10)   || 0;
+            const m = parseInt(minutesInput.value, 10) || 0;
+            const s = parseInt(secondsInput.value, 10) || 0;
+            startTimer(h * 3600 + m * 60 + s);
+        }
+
+        function togglePause() {
+            if (state.status === 'running') {
+                state.remainingMs = Math.max(0, state.endTime - Date.now());
+                state.endTime     = null;
+                state.status      = 'paused';
+            } else if (state.status === 'paused') {
+                state.endTime     = Date.now() + state.remainingMs;
+                state.remainingMs = null;
+                state.status      = 'running';
+            } else {
+                return;
+            }
+            save();
+            refresh();
+        }
+
+        function addMinute() {
+            if (state.status === 'running') {
+                state.endTime    += 60000;
+                state.durationMs += 60000;
+            } else if (state.status === 'paused') {
+                state.remainingMs += 60000;
+                state.durationMs  += 60000;
+            } else {
+                return;
+            }
+            save();
+            refresh();
+            showToast('+1 minute added.', 'info');
+        }
+
+        function stopTimer() {
+            state = { status: 'idle', endTime: null, remainingMs: null, durationMs: 0 };
+            save();
+            refresh();
+        }
+
+        // ── Alarm (sound + repeats until dismissed) ───────────────────────────
+        let audioCtx = null;
+        let alarmIntervalId = null;
+
+        function getAudioCtx() {
+            if (!audioCtx) {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (Ctx) audioCtx = new Ctx();
+            }
+            return audioCtx;
+        }
+
+        function playBeep() {
+            const ctx = getAudioCtx();
+            if (!ctx) return;
+            try {
+                if (ctx.state === 'suspended') ctx.resume();
+                const now = ctx.currentTime;
+                [0, 0.2].forEach(offset => {
+                    const osc  = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = 880;
+                    gain.gain.setValueAtTime(0.0001, now + offset);
+                    gain.gain.exponentialRampToValueAtTime(0.3, now + offset + 0.01);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.18);
+                    osc.connect(gain).connect(ctx.destination);
+                    osc.start(now + offset);
+                    osc.stop(now + offset + 0.2);
+                });
+            } catch (_) { /* audio unavailable, ignore */ }
+        }
+
+        function syncAlarm() {
+            if (state.status === 'done') {
+                if (!alarmIntervalId) {
+                    playBeep();
+                    alarmIntervalId = setInterval(playBeep, 2000);
+                }
+            } else if (alarmIntervalId) {
+                clearInterval(alarmIntervalId);
+                alarmIntervalId = null;
+            }
+        }
+
+        // ── Document title ─────────────────────────────────────────────────────
+        function updateTitle() {
+            if (state.status === 'done') {
+                document.title = Math.floor(Date.now() / 1000) % 2 === 0
+                    ? '⏰ Time’s up!'
+                    : 'Software Security – Timer';
+            } else if (state.status === 'running' || state.status === 'paused') {
+                document.title = `${formatTime(getRemainingMs())} · Timer`;
+            } else {
+                document.title = 'Software Security – Timer';
+            }
+        }
+
+        // ── Edit-mode render ───────────────────────────────────────────────────
+        function render() {
+            if (state.status === 'idle') {
+                statusCard.classList.add('hidden');
+                statusCard.classList.remove('alarm-flash');
+            } else {
+                statusCard.classList.remove('hidden');
+                statusCard.classList.toggle('alarm-flash', state.status === 'done');
+
+                const rem = getRemainingMs();
+                miniDisplay.textContent = formatTime(rem);
+                miniProgress.style.width = getProgressPercent() + '%';
+
+                statusLabel.textContent =
+                    state.status === 'running' ? 'Running' :
+                    state.status === 'paused'  ? 'Paused'  :
+                                                  'Time’s up!';
+                statusLabel.classList.toggle('alarm-text', state.status === 'done');
+
+                pauseResumeBtn.textContent = state.status === 'running' ? 'Pause' : 'Resume';
+                pauseResumeBtn.disabled = state.status === 'done';
+                addMinuteBtn.disabled   = state.status === 'done';
+                stopBtn.textContent     = state.status === 'done' ? 'Dismiss' : 'Stop';
+            }
+            syncAlarm();
+            updateTitle();
+        }
+
+        // ── Present-mode render ────────────────────────────────────────────────
+        function renderPresent() {
+            if (state.status === 'idle') {
+                presentEmpty.style.display = 'block';
+                presentTimerBox.style.display = 'none';
+                presentSubtitle.textContent = '';
+                presentBody.classList.remove('alarm-flash');
+                syncAlarm();
+                updateTitle();
+                return;
+            }
+
+            presentEmpty.style.display = 'none';
+            presentTimerBox.style.display = 'flex';
+
+            const rem = getRemainingMs();
+            presentDisplay.textContent = formatTime(rem);
+            presentProgress.style.width = getProgressPercent() + '%';
+
+            const label =
+                state.status === 'running' ? 'Running' :
+                state.status === 'paused'  ? 'Paused'  :
+                                              'Time’s up!';
+            presentStatusLabel.textContent = label;
+            presentStatusLabel.classList.toggle('alarm-text', state.status === 'done');
+            presentSubtitle.textContent = label;
+
+            presentPauseBtn.textContent = state.status === 'running' ? 'Pause' : 'Resume';
+            presentPauseBtn.disabled = state.status === 'done';
+            presentPauseBtn.style.opacity = state.status === 'done' ? '0.4' : '1';
+            presentAddMinuteBtn.disabled = state.status === 'done';
+            presentAddMinuteBtn.style.opacity = state.status === 'done' ? '0.4' : '1';
+            presentStopBtn.textContent = state.status === 'done' ? 'Dismiss' : 'Stop';
+
+            presentBody.classList.toggle('alarm-flash', state.status === 'done');
+
+            syncAlarm();
+            updateTitle();
+        }
+
+        // ── Ticking ────────────────────────────────────────────────────────────
+        function tick() {
+            if (state.status === 'running' && state.endTime - Date.now() <= 0) {
+                state.status      = 'done';
+                state.remainingMs = 0;
+                state.endTime     = null;
+                save();
+            }
+            if (PRESENT) renderPresent(); else render();
+        }
+
+        // ── Boot ───────────────────────────────────────────────────────────────
+        load();
+
+        if (PRESENT) {
+            editWrap.style.display = 'none';
+            document.body.style.padding = '0';
+            presentWrap.style.display = 'flex';
+            renderPresent();
+            window.addEventListener('storage', e => {
+                if (e.key === STORAGE_KEY) { load(); renderPresent(); }
+            });
+        } else {
+            render();
+            window.addEventListener('storage', e => {
+                if (e.key === STORAGE_KEY) { load(); render(); }
+            });
+        }
+
+        setInterval(tick, 200);
+    </script>
+
+    <style>
+        .preset-btn {
+            padding: 0.6rem 1.1rem;
+            background-color: #E7E6E6;
+            color: #1f2937;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            transition: background-color 0.15s, color 0.15s;
+        }
+        .preset-btn:hover {
+            background-color: #7B1717;
+            color: #ffffff;
+        }
+        .preset-btn:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px #7B1717, 0 0 0 4px rgba(123,23,23,0.15);
+        }
+    </style>
+</body>
+</html>
