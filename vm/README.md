@@ -43,18 +43,43 @@ What `certgen_post.php` does, in order:
 
 Progress is streamed to the browser as HTML; PHP errors go to `php-error.log` in the same directory.
 
-### 2. VM side — consume certificates (every boot)
+### 2. VM side — update code and certificates (every boot)
 
-`update_certs.sh` runs on each Kali training VM at startup. It:
+`update_certs.sh` runs on each Kali training VM at startup. The name is historical: it now does
+**two** jobs. The invocation is baked into the VM images and cannot be changed, so this one file at
+this one URL is the only lever for changing what happens at boot — hence the misnomer, and hence why
+the filename must stay as it is.
 
-1. `cd /home/kali/Vulnerads`
-2. downloads `https://cqrity.de/vm/certs.tar`, unpacks it in place, deletes the tarball
+**Phase 1 — sync the exercise code from GitHub.** For `/home/kali/Vulnerads/vulnerads` and
+`/home/kali/Vulnerads/attacat-8666`:
+
+1. `git fetch --prune origin` on the repo's current branch (skipped on a detached HEAD).
+2. If `HEAD` already matches `origin/<branch>`, log "already current" and move on.
+3. If tracked files are modified, save them with `git stash push -m "sosec-autoupdate <timestamp>"`
+   so participant work is never silently destroyed — recover it with `git stash list` /
+   `git stash pop`. **Untracked** files are deliberately left alone.
+4. `git reset --hard origin/<branch>`, then log the commits that arrived.
+
+**Phase 2 — install the certificates** (unchanged behaviour, now with error checks):
+
+1. downloads `https://cqrity.de/vm/certs.tar` into `/home/kali/Vulnerads`, unpacks, removes the tar
+2. warns loudly in the log if a downloaded certificate is already expired (it still installs it —
+   an expired cert lets the apps start, a missing keystore does not)
 3. converts each PEM pair into a **PKCS#12 keystore** with alias `sosec` and password `sosec`:
    - `vulnerads.de` → `/home/kali/Vulnerads/vulnerads/src/main/resources/vulnerads.de.p12`
      (Spring Boot app resource)
    - `attacat.de` → `/home/kali/Vulnerads/attacat-8666/conf/attacat.de.p12`
 
-The whole thing is a single `&&`-chain, so any failed step aborts the rest silently.
+**The order is deliberate.** `git reset --hard` reverts tracked files, and the `vulnerads` keystore
+is written *inside* a synced repo — so the code sync must run first, or a reset could revert the
+keystore that was just installed.
+
+Everything is logged with timestamps to stdout (so it lands in the boot journal) and to
+`/home/kali/Vulnerads/update.log`. The phases are independent: a failed `git fetch` does not stop
+the certificates from being installed, and vice versa. The script exits non-zero if either failed.
+
+> **Syncing source does not rebuild or restart anything.** New code takes effect the next time a
+> participant starts the app themselves (e.g. `mvn spring-boot:run`).
 
 ## Operating it
 
@@ -111,15 +136,30 @@ The web host serving `/vm/` needs:
 
 - Kali VM with user **`kali`** and the training checkout at **`/home/kali/Vulnerads`**, containing
   `vulnerads/src/main/resources/` and `attacat-8666/conf/`.
-- `wget`, `tar`, `openssl` and `curl` on `PATH`.
+- `git`, `tar`, `openssl`, `timeout` and `curl` (or `wget`) on `PATH`.
+- Both training repos cloned with an `origin` remote pointing at the **public** GitHub repos, so an
+  anonymous HTTPS fetch works with no credentials on the VM.
 - Network up **before** the script runs. If it is wired into boot via systemd, order it
-  `After=network-online.target` / `Wants=network-online.target`, otherwise the download fails and
-  the VM silently keeps yesterday's keystores.
-- Write access to both `.p12` target paths.
+  `After=network-online.target` / `Wants=network-online.target`, otherwise both the code sync and
+  the download fail and the VM silently keeps yesterday's code and keystores.
+- Write access to both `.p12` target paths and to `/home/kali/Vulnerads/update.log`.
 - The consuming apps must expect keystore password **`sosec`** and key alias **`sosec`**.
+- If the boot hook runs the script **as root**, `sudo` or `runuser` must be present: the repos are
+  owned by `kali`, and git refuses to touch another user's repo ("detected dubious ownership"), so
+  the script re-runs every git command as `kali`.
 
 ## Gotchas
 
+- **`git status` on a VM proves nothing about being up to date.** It never contacts the network: it
+  compares the local branch against the remote-tracking ref `origin/<branch>`, which is a cache
+  written by the last `git fetch`. On a VM that has never fetched, that cache is as old as the
+  image, so "Your branch is up to date with 'origin/master'" is stale-vs-stale and always true.
+  Always `git fetch origin` first, or just read `/home/kali/Vulnerads/update.log`.
+- **The baked-in boot command is `curl -s ...| bash -s`, with no `-f`.** On an HTTP error the
+  server's error page gets piped into `bash` instead of the script. Nothing in this repo can fix
+  that; switch to `curl -fsS` whenever the VM images are next re-baked.
+- **A `sosec-autoupdate` stash accumulates per dirty boot.** Participants who reboot repeatedly with
+  uncommitted work will collect several; they are recoverable but never cleaned up automatically.
 - **The 80-day guard is an early `exit()`, not a per-domain skip.** If `vulnerads.de` is still
   fresh, the script exits before it even looks at `attacat.de` — and before rebuilding `certs.tar`.
   To force a reissue, move the existing `certs/*.fullchain.pem` out of the way first.

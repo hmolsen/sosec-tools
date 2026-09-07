@@ -1,0 +1,4 @@
+# Shell scripts must keep LF endings even when checked out on Windows.
+# vm/update_certs.sh is served to the Kali training VMs and executed by bash;
+# with CRLF it dies on the shebang ("bad interpreter: /usr/bin/env bash^M").
+*.sh text eol=lf
