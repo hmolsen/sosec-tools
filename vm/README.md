@@ -46,7 +46,7 @@ Progress is streamed to the browser as HTML; PHP errors go to `php-error.log` in
 ### 2. VM side — update code and certificates (every boot)
 
 `update_certs.sh` runs on each Kali training VM at startup. The name is historical: it now does
-**two** jobs. The invocation is baked into the VM images and cannot be changed, so this one file at
+**three** jobs. The invocation is baked into the VM images and cannot be changed, so this one file at
 this one URL is the only lever for changing what happens at boot — hence the misnomer, and hence why
 the filename must stay as it is.
 
@@ -70,16 +70,38 @@ the filename must stay as it is.
      (Spring Boot app resource)
    - `attacat.de` → `/home/kali/Vulnerads/attacat-8666/conf/attacat.de.p12`
 
-**The order is deliberate.** `git reset --hard` reverts tracked files, and the `vulnerads` keystore
-is written *inside* a synced repo — so the code sync must run first, or a reset could revert the
-keystore that was just installed.
+**Phase 3 — repair IntelliJ's Gradle JVM.** Gradle 9 refuses to run on a JVM older than 17, and
+IntelliJ picks that JVM from its own *Gradle JVM* setting — which is independent of the toolchain in
+`build.gradle`. When it points at the old JDK 13 still on the image, every sync fails with:
+
+> Your build is currently configured to use incompatible Java 13.0.14 and Gradle 9.7.1.
+> Cannot sync the project.
+
+**Do not accept IntelliJ's offer to downgrade to Gradle 8.14** — Spring Boot 4 needs Gradle 9. The
+correct fix is to select the JDK 17 that is already installed on the VM, which this phase does
+without opening the IDE:
+
+1. Finds the lowest installed JDK >= 17 (under `/usr/lib/jvm`, `~/.jdks` or `/opt/java`).
+2. If `.idea/gradle.xml` already selects it, logs one line and stops — importantly, it does **not**
+   disturb a running IDE when nothing needs changing.
+3. Otherwise stops IntelliJ (`pkill -f idea`, waiting for it to actually exit, escalating to
+   `-9` after 30s) — the IDE rewrites its config on exit and would discard the fix.
+4. Registers the JDK in `~/.config/JetBrains/*/options/jdk.table.xml`, reusing an existing entry if
+   one already points at that path, and sets `gradleJvm` in the project's `.idea/gradle.xml`.
+
+Needs no `sudo`: everything it writes is under `$HOME` or the project.
+
+**The order is deliberate.** `git reset --hard` reverts tracked files — and both the `vulnerads`
+keystore and `.idea/gradle.xml` live *inside* a synced repo. So the code sync must run first, or a
+reset would revert the keystore and the IntelliJ fix that were just applied.
 
 Everything is logged with timestamps to stdout (so it lands in the boot journal) and to
-`/home/kali/Vulnerads/update.log`. The phases are independent: a failed `git fetch` does not stop
-the certificates from being installed, and vice versa. The script exits non-zero if either failed.
+`/home/kali/Vulnerads/update.log`. The three phases are independent: a failed `git fetch` does not
+stop the certificates from being installed, a missing JDK does not stop either of the first two, and
+so on. The script exits non-zero if any phase failed, naming which in the final line.
 
 > **Syncing source does not rebuild or restart anything.** New code takes effect the next time a
-> participant starts the app themselves (e.g. `mvn spring-boot:run`).
+> participant starts the app themselves (e.g. `./gradlew bootRun`, or a sync in IntelliJ).
 
 ## Operating it
 
@@ -98,11 +120,26 @@ The page submits over `fetch` and strips all markup out of the response before r
 backend's raw HTML is never inserted as live HTML. Without JS it degrades to a plain form POST and
 you get `certgen_post.php`'s unstyled output directly.
 
-**Refreshing a VM (on the VM, or wired into boot):**
+**Updating a VM by hand — run this on the VM, from any directory:**
 
 ```sh
-curl -s https://cqrity.de/vm/update_certs.sh | bash -s
+curl -fsS https://cqrity.de/vm/update_certs.sh | bash
 ```
+
+That pulls the latest exercise code from GitHub *and* installs the current certificates, then
+prints a timestamped summary. Use `-fsS`, not a bare `-s`: `-f` makes curl fail on an HTTP error
+instead of piping the server's error page into `bash`, and `-sS` stays quiet while still showing
+real errors.
+
+To see what it did, or what it did on the last boot:
+
+```sh
+tail -40 ~/Vulnerads/update.log
+```
+
+The same script runs automatically at every boot through the older invocation baked into the VM
+images (`curl -s ... | bash -s`). That one cannot be changed, which is why the script itself has to
+carry all the error handling.
 
 ## Server requirements
 
@@ -136,7 +173,9 @@ The web host serving `/vm/` needs:
 
 - Kali VM with user **`kali`** and the training checkout at **`/home/kali/Vulnerads`**, containing
   `vulnerads/src/main/resources/` and `attacat-8666/conf/`.
-- `git`, `tar`, `openssl`, `timeout` and `curl` (or `wget`) on `PATH`.
+- `git`, `tar`, `openssl`, `timeout`, `python3`, `pgrep`/`pkill` and `curl` (or `wget`) on `PATH`.
+- A **JDK 17 or newer** installed for the IntelliJ fix (the images already ship OpenJDK 17.0.6).
+  Without one, phase 3 logs the `apt install openjdk-17-jdk` hint and reports a failure.
 - Both training repos cloned with an `origin` remote pointing at the **public** GitHub repos, so an
   anonymous HTTPS fetch works with no credentials on the VM.
 - Network up **before** the script runs. If it is wired into boot via systemd, order it

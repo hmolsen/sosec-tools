@@ -1,19 +1,36 @@
 #!/usr/bin/env bash
 #
-# SoSec training VM boot script.
+# SoSec training VM update script.
 #
-# Runs on every VM boot as:
-#   curl -s https://cqrity.de/vm/update_certs.sh | bash -s
+# ─────────────────────────────────────────────────────────────────────────────
+#  RUN THIS ON THE VM TO UPDATE IT (copy/paste, from any directory):
 #
-# That command is baked into the VM images and cannot be changed, so this file
-# is the only lever for changing what happens at boot. The name is historical —
-# it now does two jobs:
+#      curl -fsS https://cqrity.de/vm/update_certs.sh | bash
 #
-#   1. sync the exercise repos from GitHub  (see update_repo)
-#   2. install the current TLS certificates (see install_certs)
+#  -f = fail on an HTTP error instead of piping the server's error page into
+#       bash;  -sS = quiet, but still print real errors.
+# ─────────────────────────────────────────────────────────────────────────────
 #
-# Regenerate the certificates first at https://cqrity.de/vm/certgen.php, which
-# rebuilds the certs.tar this script downloads.
+# The same script also runs automatically on every VM boot, via the older
+# invocation baked into the VM images:
+#
+#      curl -s https://cqrity.de/vm/update_certs.sh | bash -s
+#
+# That baked-in command cannot be changed, so this file at this URL is the only
+# lever for changing what happens at boot. The name is historical — it now does
+# three jobs:
+#
+#   1. sync the exercise repos from GitHub   (see update_repo)
+#   2. install the current TLS certificates  (see install_certs)
+#   3. fix IntelliJ's Gradle JVM (needs 17+) (see configure_intellij_jvm)
+#
+# Job 3 stops a running IntelliJ first, because the IDE rewrites its own config
+# on exit and would otherwise discard the fix.
+#
+# Certificates are issued separately, beforehand, at
+# https://cqrity.de/vm/certgen.php — that rebuilds the certs.tar this downloads.
+#
+# Everything is logged to /home/kali/Vulnerads/update.log.
 
 # Deliberately no `set -e`: a git failure must not stop the certificates from
 # being installed, and vice versa. Each phase reports its own outcome.
@@ -43,6 +60,7 @@ export GIT_ASKPASS=/bin/true
 
 git_failed=0
 cert_failed=0
+idea_failed=0
 
 # ── Logging ────────────────────────────────────────────────────────────────
 log() {
@@ -200,6 +218,169 @@ install_certs() {
     return $rc
 }
 
+# ── Phase 3: point IntelliJ's "Gradle JVM" at a JDK 17+ ────────────────────
+# Gradle 9 refuses to run on a JVM older than 17. IntelliJ picks that JVM from
+# its own "Gradle JVM" setting, which is independent of the toolchain in
+# build.gradle, so a stale setting produces:
+#
+#   Your build is currently configured to use incompatible Java 13.0.14 and
+#   Gradle 9.7.1. Cannot sync the project.
+#
+# Do NOT accept IntelliJ's offer to downgrade to Gradle 8.14 — Spring Boot 4
+# needs Gradle 9. The fix is to select the JDK 17 that is already installed.
+#
+# This has to run after the git sync: .idea/gradle.xml may be tracked, and
+# `reset --hard` would revert whatever we wrote.
+
+# major version of the JDK at $1, empty if it is not a usable JDK
+jdk_major() {
+    local rel="$1/release" v=""
+    [ -r "$rel" ] && v=$(sed -n 's/^JAVA_VERSION="\([0-9][0-9]*\).*/\1/p' "$rel" | head -1)
+    if [ -z "$v" ] && [ -x "$1/bin/java" ]; then
+        v=$("$1/bin/java" -version 2>&1 | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' | head -1)
+    fi
+    printf '%s' "$v"
+}
+
+# echoes "<home> <major>" for the lowest installed JDK >= 17
+find_jdk17() {
+    local d v best="" bestv=""
+    for d in /usr/lib/jvm/*/ "$HOME"/.jdks/*/ /opt/java/*/; do
+        d=${d%/}
+        [ -x "$d/bin/java" ] || continue
+        v=$(jdk_major "$d")
+        case "$v" in '' | *[!0-9]*) continue ;; esac
+        [ "$v" -ge 17 ] || continue
+        if [ -z "$bestv" ] || [ "$v" -lt "$bestv" ]; then
+            best=$d
+            bestv=$v
+        fi
+    done
+    [ -n "$best" ] || return 1
+    printf '%s %s' "$best" "$bestv"
+}
+
+# IntelliJ rewrites its config on exit, so it must be fully stopped before we
+# touch anything — otherwise it overwrites our change on the way out.
+stop_intellij() {
+    pgrep -f '[i]dea' >/dev/null 2>&1 || return 0
+    log "IDEA: IntelliJ is running — stopping it so it cannot overwrite the config on exit"
+    pkill -f '[i]dea' 2>/dev/null || true
+    local i
+    for i in $(seq 1 30); do
+        pgrep -f '[i]dea' >/dev/null 2>&1 || { log "IDEA: IntelliJ stopped"; return 0; }
+        sleep 1
+    done
+    log "IDEA: IntelliJ did not exit after 30s, force-killing"
+    pkill -9 -f '[i]dea' 2>/dev/null || true
+    sleep 2
+}
+
+configure_intellij_jvm() {
+    local proj=$1 name jdk_home jdk_ver found
+
+    [ -d "$proj/.idea" ] || [ -f "$proj/gradlew" ] || return 0
+
+    if ! found=$(find_jdk17); then
+        log "IDEA: no JDK 17+ installed, cannot fix the Gradle JVM (try: sudo apt install openjdk-17-jdk)"
+        return 1
+    fi
+    jdk_home=${found% *}
+    jdk_ver=${found#* }
+    name="jdk-$jdk_ver"
+
+    # Already correct? Then do nothing — and in particular do NOT kill a running
+    # IDE just because this ran again.
+    if grep -qs "name=\"gradleJvm\" value=\"$name\"" "$proj/.idea/gradle.xml" &&
+        grep -qs "value=\"$jdk_home\"" "$HOME"/.config/JetBrains/*/options/jdk.table.xml; then
+        log "IDEA: $(basename "$proj") already uses $name ($jdk_home)"
+        return 0
+    fi
+
+    stop_intellij
+
+    python3 - "$proj" "$jdk_home" "$jdk_ver" <<'PY' 2>&1 | while read -r l; do log "IDEA: $l"; done
+import glob, os, sys
+import xml.etree.ElementTree as ET
+
+project, home, ver = sys.argv[1], sys.argv[2], sys.argv[3]
+name = "jdk-" + ver
+
+def load(path, tag, attrs=None):
+    if os.path.exists(path):
+        t = ET.parse(path)
+        return t, t.getroot()
+    r = ET.Element(tag, attrs or {})
+    return ET.ElementTree(r), r
+
+def save(t, p):
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    t.write(p, encoding="UTF-8", xml_declaration=True)
+
+# 1) make the JDK known to the IDE, reusing an existing entry if it has one
+home_dir = os.environ.get("HOME") or os.path.expanduser("~")
+jb = os.path.join(home_dir, ".config", "JetBrains")
+tables = glob.glob(os.path.join(jb, "*", "options", "jdk.table.xml"))
+if not tables:
+    cfg = sorted(glob.glob(os.path.join(jb, "*")))
+    tables = [os.path.join(cfg[-1], "options", "jdk.table.xml")] if cfg else []
+
+sdk = name
+for tbl in tables:
+    tree, root = load(tbl, "application")
+    comp = root.find("./component[@name='ProjectJdkTable']")
+    if comp is None:
+        comp = ET.SubElement(root, "component", {"name": "ProjectJdkTable"})
+    reused = None
+    for jdk in comp.findall("jdk"):
+        hp, nm = jdk.find("homePath"), jdk.find("name")
+        if hp is not None and nm is not None and \
+           os.path.realpath(hp.get("value", "")) == os.path.realpath(home):
+            reused = nm.get("value")
+            break
+    if reused:
+        sdk = reused
+        print("SDK already registered as '%s'" % reused)
+        continue
+    jdk = ET.SubElement(comp, "jdk", {"version": "2"})
+    ET.SubElement(jdk, "name", {"value": name})
+    ET.SubElement(jdk, "type", {"value": "JavaSDK"})
+    ET.SubElement(jdk, "version", {"value": 'java version "%s"' % ver})
+    ET.SubElement(jdk, "homePath", {"value": home})
+    roots = ET.SubElement(jdk, "roots")
+    for kind in ("annotationsPath", "classPath", "javadocPath", "sourcePath"):
+        ET.SubElement(ET.SubElement(roots, kind), "root", {"type": "composite"})
+    save(tree, tbl)
+    print("registered SDK '%s' -> %s" % (name, tbl))
+
+if not tables:
+    sdk = "#JAVA_HOME"
+    print("no JetBrains config dir found, falling back to #JAVA_HOME")
+
+# 2) select it as the project's Gradle JVM
+gx = os.path.join(project, ".idea", "gradle.xml")
+tree, root = load(gx, "project", {"version": "4"})
+comp = root.find("./component[@name='GradleSettings']")
+if comp is None:
+    comp = ET.SubElement(root, "component", {"name": "GradleSettings"})
+linked = comp.find("./option[@name='linkedExternalProjectsSettings']")
+if linked is None:
+    linked = ET.SubElement(comp, "option", {"name": "linkedExternalProjectsSettings"})
+gps = linked.find("GradleProjectSettings")
+if gps is None:
+    gps = ET.SubElement(linked, "GradleProjectSettings")
+    ET.SubElement(gps, "option", {"name": "externalProjectPath", "value": "$PROJECT_DIR$"})
+for opt in gps.findall("./option[@name='gradleJvm']"):
+    gps.remove(opt)
+ET.SubElement(gps, "option", {"name": "gradleJvm", "value": sdk})
+save(tree, gx)
+print("gradleJvm = %s -> %s" % (sdk, gx))
+PY
+
+    log "IDEA: $(basename "$proj") set to use JDK $jdk_ver ($jdk_home)"
+    return 0
+}
+
 # ── Main ───────────────────────────────────────────────────────────────────
 log "=== SoSec VM update starting (user: $(id -un)) ==="
 
@@ -211,10 +392,16 @@ done
 
 install_certs || cert_failed=1
 
-if [ "$git_failed" -eq 0 ] && [ "$cert_failed" -eq 0 ]; then
+# After the git sync: .idea/gradle.xml may be tracked, so a reset would revert
+# this. Last, because it may have to stop a running IntelliJ.
+for repo in "${REPOS[@]}"; do
+    configure_intellij_jvm "$repo" || idea_failed=1
+done
+
+if [ "$git_failed" -eq 0 ] && [ "$cert_failed" -eq 0 ] && [ "$idea_failed" -eq 0 ]; then
     log "=== SoSec VM update finished OK ==="
     exit 0
 fi
 
-log "=== SoSec VM update finished WITH ERRORS (git=$git_failed certs=$cert_failed) - see $LOG ==="
+log "=== SoSec VM update finished WITH ERRORS (git=$git_failed certs=$cert_failed idea=$idea_failed) - see $LOG ==="
 exit 1
