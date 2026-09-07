@@ -46,7 +46,7 @@ Progress is streamed to the browser as HTML; PHP errors go to `php-error.log` in
 ### 2. VM side — update code and certificates (every boot)
 
 `update_certs.sh` runs on each Kali training VM at startup. The name is historical: it now does
-**three** jobs. The invocation is baked into the VM images and cannot be changed, so this one file at
+**four** jobs. The invocation is baked into the VM images and cannot be changed, so this one file at
 this one URL is the only lever for changing what happens at boot — hence the misnomer, and hence why
 the filename must stay as it is.
 
@@ -59,6 +59,21 @@ the filename must stay as it is.
    so participant work is never silently destroyed — recover it with `git stash list` /
    `git stash pop`. **Untracked** files are deliberately left alone.
 4. `git reset --hard origin/<branch>`, then log the commits that arrived.
+
+**Phase 1b — purge stale build outputs.** After each sync, `build/`, `out/`, `.gradle/` and
+`bin/main`, `bin/test` are deleted from every repo.
+
+This is not housekeeping, it fixes a real failure. `git reset --hard` restores **tracked** files
+only; compiled classes under `build/` are untracked, so they survive a sync and stay on the runtime
+classpath. A class referring to something long since deleted from the source — a `javax.servlet`
+import, say — then still crashes the app at startup, while the source looks perfectly correct.
+
+It runs on **every** invocation, not only when git reported new commits: a checkout can be fully
+current while `build/` is left over from an older commit, which is exactly that failure mode. It
+runs even if the fetch failed, since a stale build is worth clearing either way. Downloaded
+dependencies live in `~/.gradle` and are deliberately **not** touched, so this costs a recompile,
+never a re-download. Source files, untracked participant files and the installed keystores are all
+left alone.
 
 **Phase 2 — install the certificates** (unchanged behaviour, now with error checks):
 
@@ -81,13 +96,38 @@ IntelliJ picks that JVM from its own *Gradle JVM* setting — which is independe
 correct fix is to select the JDK 17 that is already installed on the VM, which this phase does
 without opening the IDE:
 
-1. Finds the lowest installed JDK >= 17 (under `/usr/lib/jvm`, `~/.jdks` or `/opt/java`).
+1. Finds the lowest usable JDK >= 17, searching `/usr/lib/jvm`, `~/.jdks`, `/opt/java` and finally
+   IntelliJ's own bundled JetBrains Runtime under
+   `~/.local/share/JetBrains/Toolbox/apps/*/jbr`. Each candidate is canonicalised with
+   `readlink -f` and must have `bin/javac`. All three details matter:
+   - IntelliJ will not accept the Debian alternatives symlink `/usr/lib/jvm/default-java` as an
+     SDK home; it needs the real directory.
+   - **A JRE is not a JDK.** These images ship `openjdk-17-jre` without `javac`, and pointing the
+     Gradle JVM at it is exactly what produces the invalid-JDK error below.
+   - The bundled JBR is a genuine JDK and is always present when the IDE is, so it is a reliable
+     fallback on a JRE-only image.
+
+   When nothing qualifies, the log lists every candidate and why it was rejected, then points at
+   `sudo apt install openjdk-17-jdk` — the real fix if no JDK is installed at all.
 2. If `.idea/gradle.xml` already selects it, logs one line and stops — importantly, it does **not**
    disturb a running IDE when nothing needs changing.
 3. Otherwise stops IntelliJ (`pkill -f idea`, waiting for it to actually exit, escalating to
    `-9` after 30s) — the IDE rewrites its config on exit and would discard the fix.
-4. Registers the JDK in `~/.config/JetBrains/*/options/jdk.table.xml`, reusing an existing entry if
-   one already points at that path, and sets `gradleJvm` in the project's `.idea/gradle.xml`.
+4. Registers the JDK in `~/.config/JetBrains/*/options/jdk.table.xml` — including a full
+   `<classPath>` of `jrt://` module roots generated from `java --list-modules` — and sets
+   `gradleJvm` in the project's `.idea/gradle.xml`.
+
+An SDK entry with an **empty `<classPath>`** is the thing IntelliJ reports as:
+
+> Invalid Gradle JDK configuration found. Open Gradle Settings
+
+so the module roots are not optional decoration. If `java --list-modules` returns nothing, the
+phase refuses to write an entry at all and fails loudly, rather than silently recreating that
+broken state. A previously-written rootless entry is detected and rebuilt in place.
+
+Finally it repairs `.idea/misc.xml`: these images ship with `project-jdk-name="azul-13"` and
+`languageLevel="JDK_13"`, which points the whole project at Java 13 and becomes a dangling SDK
+entry once `~/.jdks/azul-13.0.14` is gone. Both are set to the JDK 17 the Gradle JVM now uses.
 
 Needs no `sudo`: everything it writes is under `$HOME` or the project.
 
@@ -96,7 +136,7 @@ keystore and `.idea/gradle.xml` live *inside* a synced repo. So the code sync mu
 reset would revert the keystore and the IntelliJ fix that were just applied.
 
 Everything is logged with timestamps to stdout (so it lands in the boot journal) and to
-`/home/kali/Vulnerads/update.log`. The three phases are independent: a failed `git fetch` does not
+`/home/kali/Vulnerads/update.log`. The phases are independent: a failed `git fetch` does not
 stop the certificates from being installed, a missing JDK does not stop either of the first two, and
 so on. The script exits non-zero if any phase failed, naming which in the final line.
 

@@ -21,6 +21,7 @@
 # three jobs:
 #
 #   1. sync the exercise repos from GitHub   (see update_repo)
+#   1b. purge stale build outputs            (see purge_build_outputs)
 #   2. install the current TLS certificates  (see install_certs)
 #   3. fix IntelliJ's Gradle JVM (needs 17+) (see configure_intellij_jvm)
 #
@@ -61,6 +62,7 @@ export GIT_ASKPASS=/bin/true
 git_failed=0
 cert_failed=0
 idea_failed=0
+build_failed=0
 
 # ── Logging ────────────────────────────────────────────────────────────────
 log() {
@@ -154,6 +156,42 @@ update_repo() {
     return 0
 }
 
+# ── Phase 1b: purge stale build outputs ────────────────────────────────────
+# `git reset --hard` restores tracked files only. Compiled classes under build/
+# and out/ are untracked, so they survive a sync and stay on the runtime
+# classpath — which is how a reference that no longer exists anywhere in the
+# source (a javax.servlet import, say) can still crash the app at startup.
+#
+# Purged on every run, not just when git reported a change: a checkout can be
+# current while the build directory is from an older commit, which is exactly
+# that failure. Dependencies live in ~/.gradle and are deliberately NOT touched,
+# so this costs a recompile, not a re-download.
+BUILD_DIRS=(build out .gradle bin/main bin/test)
+
+purge_build_outputs() {
+    local dir=$1 name sub removed=0
+
+    case "$dir" in '' | / | /home | /home/*/) return 1 ;; esac
+    [ -d "$dir" ] || return 0
+    name=$(basename "$dir")
+
+    for sub in "${BUILD_DIRS[@]}"; do
+        [ -d "$dir/$sub" ] || continue
+        if rm -rf "${dir:?}/$sub"; then
+            log "BUILD $name: purged $sub/"
+            removed=$((removed + 1))
+        else
+            log "BUILD $name: could not remove $sub/"
+            return 1
+        fi
+    done
+
+    if [ "$removed" -eq 0 ]; then
+        log "BUILD $name: no build output to purge"
+    fi
+    return 0
+}
+
 # ── Phase 2: download and install the certificates ─────────────────────────
 fetch_tar() {
     if command -v curl >/dev/null 2>&1; then
@@ -243,21 +281,57 @@ jdk_major() {
 }
 
 # echoes "<home> <major>" for the lowest installed JDK >= 17
+# find_jdk17 reports through these globals rather than stdout: a command
+# substitution would run it in a subshell and throw the scan notes away.
+JDK_HOME=""
+JDK_VER=""
+JDK_SCAN_NOTES=""
+
 find_jdk17() {
-    local d v best="" bestv=""
-    for d in /usr/lib/jvm/*/ "$HOME"/.jdks/*/ /opt/java/*/; do
+    local d v best="" bestv="" seen=""
+    JDK_SCAN_NOTES=""
+
+    # The last entries are IntelliJ's own bundled runtime (JetBrains Runtime).
+    # It is a genuine JDK and is always present when the IDE is, which makes it
+    # a reliable fallback on images that only ship a JRE.
+    for d in /usr/lib/jvm/*/ "$HOME"/.jdks/*/ /opt/java/*/         "$HOME"/.local/share/JetBrains/Toolbox/apps/*/jbr/ /opt/*/jbr/; do
         d=${d%/}
-        [ -x "$d/bin/java" ] || continue
+        # Canonicalise: /usr/lib/jvm/default-java is a symlink into the real
+        # directory, and IntelliJ will not accept the alternatives symlink as an
+        # SDK home. Following it also collapses the duplicate candidates
+        # (default-java, java-1.17.0-…, java-17-…) onto one real path.
+        d=$(readlink -f "$d" 2>/dev/null) || continue
+        [ -n "$d" ] && [ -d "$d" ] || continue
+        case " $seen " in *" $d "*) continue ;; esac
+        seen="$seen $d"
+
         v=$(jdk_major "$d")
-        case "$v" in '' | *[!0-9]*) continue ;; esac
-        [ "$v" -ge 17 ] || continue
+        # javac, not just java: a JRE is not a usable Gradle JVM, and an SDK
+        # home without it is exactly what the IDE calls an invalid JDK.
+        if [ ! -x "$d/bin/javac" ]; then
+            if [ -x "$d/bin/java" ]; then
+                JDK_SCAN_NOTES="$JDK_SCAN_NOTES|$d - Java ${v:-?}, but no bin/javac (JRE only)"
+            fi
+            continue
+        fi
+        case "$v" in '' | *[!0-9]*)
+            JDK_SCAN_NOTES="$JDK_SCAN_NOTES|$d - unreadable version"
+            continue
+            ;;
+        esac
+        if [ "$v" -lt 17 ]; then
+            JDK_SCAN_NOTES="$JDK_SCAN_NOTES|$d - Java $v, too old"
+            continue
+        fi
         if [ -z "$bestv" ] || [ "$v" -lt "$bestv" ]; then
             best=$d
             bestv=$v
         fi
     done
     [ -n "$best" ] || return 1
-    printf '%s %s' "$best" "$bestv"
+    JDK_HOME=$best
+    JDK_VER=$bestv
+    return 0
 }
 
 # IntelliJ rewrites its config on exit, so it must be fully stopped before we
@@ -277,30 +351,43 @@ stop_intellij() {
 }
 
 configure_intellij_jvm() {
-    local proj=$1 name jdk_home jdk_ver found
+    local proj=$1 name jdk_home jdk_ver
 
     [ -d "$proj/.idea" ] || [ -f "$proj/gradlew" ] || return 0
 
-    if ! found=$(find_jdk17); then
-        log "IDEA: no JDK 17+ installed, cannot fix the Gradle JVM (try: sudo apt install openjdk-17-jdk)"
+    if ! find_jdk17; then
+        log "IDEA: no usable JDK 17+ found. Candidates examined:"
+        # printf with a trailing newline: `read` fails on a final unterminated
+        # line, which would silently drop the last candidate from the report.
+        printf '%s
+' "$JDK_SCAN_NOTES" | tr '|' '
+' | while read -r note; do
+            [ -n "$note" ] && log "IDEA:   $note"
+        done
+        log "IDEA: a JRE is not enough - Gradle needs a JDK. Fix with:"
+        log "IDEA:   sudo apt install openjdk-17-jdk"
         return 1
     fi
-    jdk_home=${found% *}
-    jdk_ver=${found#* }
+    jdk_home=$JDK_HOME
+    jdk_ver=$JDK_VER
     name="jdk-$jdk_ver"
 
     # Already correct? Then do nothing — and in particular do NOT kill a running
     # IDE just because this ran again.
+    # Requires a *rooted* SDK entry: an entry with no jrt:// module roots is the
+    # broken state the IDE reports as "Invalid Gradle JDK configuration found",
+    # and must be repaired rather than treated as already done.
     if grep -qs "name=\"gradleJvm\" value=\"$name\"" "$proj/.idea/gradle.xml" &&
-        grep -qs "value=\"$jdk_home\"" "$HOME"/.config/JetBrains/*/options/jdk.table.xml; then
+        grep -qs "jrt://$jdk_home" "$HOME"/.config/JetBrains/*/options/jdk.table.xml; then
         log "IDEA: $(basename "$proj") already uses $name ($jdk_home)"
         return 0
     fi
 
     stop_intellij
 
-    python3 - "$proj" "$jdk_home" "$jdk_ver" <<'PY' 2>&1 | while read -r l; do log "IDEA: $l"; done
-import glob, os, sys
+    # pipefail (set at the top) makes this pipeline fail if python3 fails.
+    if ! python3 - "$proj" "$jdk_home" "$jdk_ver" <<'PY' 2>&1 | while read -r l; do log "IDEA: $l"; done
+import glob, os, subprocess, sys
 import xml.etree.ElementTree as ET
 
 project, home, ver = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -317,6 +404,31 @@ def save(t, p):
     os.makedirs(os.path.dirname(p), exist_ok=True)
     t.write(p, encoding="UTF-8", xml_declaration=True)
 
+# The module list is what makes the SDK resolvable; without it the IDE reports
+# "Invalid Gradle JDK configuration found."
+modules = []
+try:
+    out = subprocess.run([os.path.join(home, "bin", "java"), "--list-modules"],
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                         timeout=60).stdout.decode("utf-8", "replace")
+    modules = sorted({l.split("@")[0].strip() for l in out.splitlines() if l.strip()})
+except Exception as exc:
+    print("could not list JDK modules (%s)" % exc)
+
+if not modules:
+    print("ERROR: '%s/bin/java --list-modules' returned nothing." % home)
+    print("ERROR: refusing to write a rootless SDK entry - that is exactly the")
+    print("ERROR: state the IDE rejects as 'Invalid Gradle JDK configuration'.")
+    sys.exit(1)
+
+full_ver = ver
+rel = os.path.join(home, "release")
+if os.path.exists(rel):
+    for line in open(rel):
+        if line.startswith("JAVA_VERSION="):
+            full_ver = line.split("=", 1)[1].strip().strip('"')
+            break
+
 # 1) make the JDK known to the IDE, reusing an existing entry if it has one
 home_dir = os.environ.get("HOME") or os.path.expanduser("~")
 jb = os.path.join(home_dir, ".config", "JetBrains")
@@ -331,27 +443,44 @@ for tbl in tables:
     comp = root.find("./component[@name='ProjectJdkTable']")
     if comp is None:
         comp = ET.SubElement(root, "component", {"name": "ProjectJdkTable"})
+    # An entry whose classPath is empty is rejected by the IDE as an "Invalid
+    # Gradle JDK configuration", so every entry gets real jrt:// module roots.
     reused = None
     for jdk in comp.findall("jdk"):
         hp, nm = jdk.find("homePath"), jdk.find("name")
-        if hp is not None and nm is not None and \
-           os.path.realpath(hp.get("value", "")) == os.path.realpath(home):
-            reused = nm.get("value")
+        if hp is None or nm is None:
+            continue
+        same_home = os.path.realpath(hp.get("value", "")) == os.path.realpath(home)
+        if same_home or nm.get("value") == name:
+            # Rebuild in place: this may be the stale rootless entry a previous
+            # run wrote, or an entry whose name we would otherwise collide with.
+            comp.remove(jdk)
+            if same_home:
+                reused = nm.get("value")
             break
-    if reused:
-        sdk = reused
-        print("SDK already registered as '%s'" % reused)
-        continue
+
+    sdk = reused or name
     jdk = ET.SubElement(comp, "jdk", {"version": "2"})
-    ET.SubElement(jdk, "name", {"value": name})
+    ET.SubElement(jdk, "name", {"value": sdk})
     ET.SubElement(jdk, "type", {"value": "JavaSDK"})
-    ET.SubElement(jdk, "version", {"value": 'java version "%s"' % ver})
+    ET.SubElement(jdk, "version", {"value": 'java version "%s"' % full_ver})
     ET.SubElement(jdk, "homePath", {"value": home})
     roots = ET.SubElement(jdk, "roots")
-    for kind in ("annotationsPath", "classPath", "javadocPath", "sourcePath"):
-        ET.SubElement(ET.SubElement(roots, kind), "root", {"type": "composite"})
+
+    ET.SubElement(ET.SubElement(roots, "annotationsPath"), "root", {"type": "composite"})
+
+    cp = ET.SubElement(ET.SubElement(roots, "classPath"), "root", {"type": "composite"})
+    for m in modules:
+        ET.SubElement(cp, "root", {"url": "jrt://%s!/%s" % (home, m), "type": "simple"})
+
+    ET.SubElement(ET.SubElement(roots, "javadocPath"), "root", {"type": "composite"})
+
+    sp = ET.SubElement(ET.SubElement(roots, "sourcePath"), "root", {"type": "composite"})
+    if os.path.exists(os.path.join(home, "lib", "src.zip")):
+        ET.SubElement(sp, "root", {"url": "jar://%s/lib/src.zip!/" % home, "type": "simple"})
+
     save(tree, tbl)
-    print("registered SDK '%s' -> %s" % (name, tbl))
+    print("registered SDK '%s' with %d module roots -> %s" % (sdk, len(modules), tbl))
 
 if not tables:
     sdk = "#JAVA_HOME"
@@ -375,7 +504,31 @@ for opt in gps.findall("./option[@name='gradleJvm']"):
 ET.SubElement(gps, "option", {"name": "gradleJvm", "value": sdk})
 save(tree, gx)
 print("gradleJvm = %s -> %s" % (sdk, gx))
+
+# 3) the project SDK itself. A Gradle 9 / Spring Boot 4 project left on
+#    project-jdk-name="azul-13" / languageLevel="JDK_13" keeps pointing the IDE
+#    at Java 13 - and if that SDK's home is gone, it is a dangling entry.
+mx = os.path.join(project, ".idea", "misc.xml")
+tree, root = load(mx, "project", {"version": "4"})
+prm = root.find("./component[@name='ProjectRootManager']")
+if prm is None:
+    prm = ET.SubElement(root, "component", {"name": "ProjectRootManager", "version": "2"})
+old_sdk = prm.get("project-jdk-name")
+if old_sdk != sdk:
+    prm.set("project-jdk-name", sdk)
+    prm.set("project-jdk-type", "JavaSDK")
+    prm.set("languageLevel", "JDK_%s" % ver)
+    prm.set("default", "false")
+    save(tree, mx)
+    print("project SDK %s -> %s (languageLevel JDK_%s)" % (old_sdk, sdk, ver))
+else:
+    print("project SDK already %s" % sdk)
 PY
+
+    then
+        log "IDEA: failed to configure the Gradle JVM for $(basename "$proj")"
+        return 1
+    fi
 
     log "IDEA: $(basename "$proj") set to use JDK $jdk_ver ($jdk_home)"
     return 0
@@ -388,6 +541,9 @@ log "=== SoSec VM update starting (user: $(id -un)) ==="
 # lives inside a synced repo, so certificates must be installed afterwards.
 for repo in "${REPOS[@]}"; do
     update_repo "$repo" || git_failed=1
+    # Unconditional: a failed fetch leaves the checkout stale, but a stale build
+    # directory is worth clearing either way.
+    purge_build_outputs "$repo" || build_failed=1
 done
 
 install_certs || cert_failed=1
@@ -398,10 +554,11 @@ for repo in "${REPOS[@]}"; do
     configure_intellij_jvm "$repo" || idea_failed=1
 done
 
-if [ "$git_failed" -eq 0 ] && [ "$cert_failed" -eq 0 ] && [ "$idea_failed" -eq 0 ]; then
+if [ "$git_failed" -eq 0 ] && [ "$build_failed" -eq 0 ] &&
+    [ "$cert_failed" -eq 0 ] && [ "$idea_failed" -eq 0 ]; then
     log "=== SoSec VM update finished OK ==="
     exit 0
 fi
 
-log "=== SoSec VM update finished WITH ERRORS (git=$git_failed certs=$cert_failed idea=$idea_failed) - see $LOG ==="
+log "=== SoSec VM update finished WITH ERRORS (git=$git_failed build=$build_failed certs=$cert_failed idea=$idea_failed) - see $LOG ==="
 exit 1
